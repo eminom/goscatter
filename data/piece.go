@@ -44,11 +44,9 @@ func makeSigForChunk(chunk []byte) []byte {
 
 // new piece take ownership of chunk
 func NewPiece(chunk []byte) Piece {
-	o := bytes.Repeat(chunk, 1)
-
 	return Piece{
-		Chunk: o,
-		Sig:   makeSigForChunk(o),
+		Chunk: chunk,
+		Sig:   makeSigForChunk(chunk),
 	}
 }
 
