@@ -5,9 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -22,17 +20,21 @@ import (
 	"syscall"
 	"time"
 
+	co "./coaputils"
 	"./data"
+	"./sche"
 
 	"github.com/eminom/go-coap"
 )
 
-var (
-	fAddr = flag.String("addr", "localhost:16666", "host address")
+const (
+	MinWinSize int32 = 4
+	MaxWinSize int32 = 1024
 )
 
 var (
-	msgIDer = data.NewMsgIDGen()
+	fAddr    = flag.String("addr", "localhost:16666", "host address")
+	fWinSize = flag.Int("winsize", 8, "window size for batching")
 )
 
 type MsgPack struct {
@@ -58,12 +60,6 @@ func init() {
 	flag.Parse()
 }
 
-func getMsgSig(msg *coap.Message) string {
-	var b [2]byte
-	binary.BigEndian.PutUint16(b[:], msg.MessageID)
-	return hex.EncodeToString(msg.Token) + "-" + hex.EncodeToString(b[:])
-}
-
 func makeSender(uSock *net.UDPConn,
 	wg *sync.WaitGroup, ctx context.Context) (func(*coap.Message, func(*coap.Message) bool), func(), chan<- *coap.Message) {
 
@@ -71,11 +67,13 @@ func makeSender(uSock *net.UDPConn,
 	var cond = sync.NewCond(lock)
 
 	frags := make(map[string]*MsgPack)
-	// obsoletes := make(map[string]bool)
 	msgCh := make(chan *coap.Message)
 	wg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer func() {
+			log.Printf("leavin sender-proc")
+			wg.Done()
+		}()
 		for {
 			select {
 			case <-ctx.Done():
@@ -83,7 +81,7 @@ func makeSender(uSock *net.UDPConn,
 
 			case resp := <-msgCh:
 				// log.Printf("resp 1")
-				str := getMsgSig(resp)
+				str := co.GetMsgSig(resp)
 				lock.Lock()
 				if d, ok := frags[str]; ok {
 					lock.Unlock()
@@ -103,7 +101,10 @@ func makeSender(uSock *net.UDPConn,
 
 	wg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer func() {
+			log.Printf("leavin batch-proc")
+			wg.Done()
+		}()
 		for batchOut := 0; ; batchOut++ {
 			select {
 			case <-ctx.Done():
@@ -122,7 +123,7 @@ func makeSender(uSock *net.UDPConn,
 				latest := v.lastSent.Add(5 * time.Second)
 				if now.After(latest) {
 					v.lastSent = now
-					// log.Printf("out: %v", getMsgSig(v.msg))
+					// log.Printf("out: %v", co.GetMsgSig(v.msg))
 					uSock.Write(v.chunk)
 				} else {
 					// log.Printf("not timeout yet")
@@ -136,7 +137,7 @@ func makeSender(uSock *net.UDPConn,
 	return func(req *coap.Message, dealer func(*coap.Message) bool) {
 			// log.Printf("send 1")
 			lock.Lock()
-			serialid := getMsgSig(req)
+			serialid := co.GetMsgSig(req)
 			if _, ok := frags[serialid]; !ok {
 				frags[serialid] = NewMsgPack(req, dealer)
 				cond.Signal() // incoming task
@@ -152,6 +153,8 @@ func makeSender(uSock *net.UDPConn,
 }
 
 type Collector struct {
+	WindowSize int
+
 	bombRoad    int32
 	segsCount   int
 	filename    string
@@ -170,17 +173,6 @@ func NewCollector(segCount int, filename string, hmac256 []byte,
 		hmac256:     hmac256,
 		timeStarted: time.Now(),
 	}
-}
-
-func newGetReq(reqPath string) *coap.Message {
-	rv := &coap.Message{
-		Type:      coap.Confirmable,
-		Code:      coap.GET,
-		MessageID: genMessageID(),
-		Token:     genSerial(8),
-	}
-	rv.SetPathString(reqPath)
-	return rv
 }
 
 func (c *Collector) StartCollect(whenDone func()) {
@@ -222,8 +214,13 @@ func (c *Collector) StartCollect(whenDone func()) {
 		whenDone()
 	}
 
-	const bc = 4
-	c.bombRoad = 4
+	bc := int32(c.WindowSize)
+	if bc < MinWinSize {
+		bc = MinWinSize
+	} else if bc > MaxWinSize {
+		bc = MaxWinSize
+	}
+	c.bombRoad = bc
 	var doRush func(int)
 	doRush = func(seqIdx int) {
 		if seqIdx >= c.segsCount {
@@ -235,19 +232,19 @@ func (c *Collector) StartCollect(whenDone func()) {
 			return
 		}
 		// log.Printf("req for %v", seqIdx)
-		req0 := newGetReq(fmt.Sprintf("/file/%v/0", seqIdx))
+		req0 := co.NewGetReq(fmt.Sprintf("/file/%v/0", seqIdx))
 		var newPiece data.Piece
 		sender(req0, func(resp *coap.Message) bool {
 			newPiece.Sig = bytes.Repeat(resp.Payload, 1)
 			if newPiece.VerifySig() {
 				// log.Printf("sig for %v is ok", seqIdx)
-				req1 := newGetReq(fmt.Sprintf("/file/%v/1", seqIdx))
+				req1 := co.NewGetReq(fmt.Sprintf("/file/%v/1", seqIdx))
 				sender(req1, func(rsp2 *coap.Message) bool {
 					newPiece.Chunk = bytes.Repeat(rsp2.Payload, 1)
 					if newPiece.VerifyContent() {
 						// log.Printf("chunk for %v is ok", seqIdx)
 						doPick(newPiece.Chunk, seqIdx)
-						doRush(seqIdx + bc)
+						doRush(seqIdx + int(bc))
 						return true
 					}
 					return false
@@ -257,7 +254,7 @@ func (c *Collector) StartCollect(whenDone func()) {
 			return false
 		})
 	}
-	for i := 0; i < bc; i++ {
+	for i := 0; i < int(bc); i++ {
 		doRush(i)
 	}
 }
@@ -279,67 +276,55 @@ func main() {
 	doCancel := context.CancelFunc(func() {
 		doCancel0()
 		doPreTrigger()
+		log.Printf("cancelling ...")
 	})
 	startRecvProc(sock, respCh, &wg, doCancel, ctx)
 
-	wg.Add(1)
-	go func() {
-		defer func() {
-			wg.Done()
-			// log.Printf("leavin stepper")
-		}()
-		var segs int
-		var filename string
-		procCh := make(chan int, 1)
-		procCh <- 0
-		// log.Printf("started")
-		var step int
-		for {
-			select {
-			case step = <-procCh:
-			case <-ctx.Done():
-				return
-			}
-			// log.Printf("step: %v", step)
-			switch step {
-			case 0:
-				//~ Get length
-				req := newGetReq("/file/segs")
-				sender(req, func(resp *coap.Message) bool {
-					var err error
-					segs, err = strconv.Atoi(string(resp.Payload))
-					if err != nil {
-						panic(err)
-					}
-					log.Printf("seg-count: %v", segs)
-					procCh <- 1
-					return true
-				})
-			case 1:
-				req := newGetReq("/file/name")
-				sender(req, func(resp *coap.Message) bool {
-					filename = string(resp.Payload)
-					log.Printf("downloading file: %v", filename)
-					procCh <- 2
-					return true
-				})
-			case 2:
-				req := newGetReq("/file/sha256")
-				sender(req, func(resp *coap.Message) bool {
-					// log.Printf("sha256 for content: %v", hex.EncodeToString(resp.Payload))
-					if len(resp.Payload) != sha256.Size {
-						panic(fmt.Errorf("fatal error for sha256 request"))
-					}
-					NewCollector(segs, filename, resp.Payload, sender).StartCollect(
-						func() { doCancel() },
-					)
-					return true
-				})
-			default:
-				log.Fatalf("error: %v", step)
-			}
-		}
-	}()
+	sProc := sche.NewScheProc()
+	var segs int
+	var filename string
+	workSeq := map[int]func(){
+		0: func() {
+			//~ Get length
+			req := co.NewGetReq("/file/segs")
+			sender(req, func(resp *coap.Message) bool {
+				var err error
+				segs, err = strconv.Atoi(string(resp.Payload))
+				if err != nil {
+					panic(err)
+				}
+				log.Printf("seg-count: %v", segs)
+				sProc.KickOff(1)
+				return true
+			})
+		},
+		1: func() {
+			req := co.NewGetReq("/file/name")
+			sender(req, func(resp *coap.Message) bool {
+				filename = string(resp.Payload)
+				log.Printf("downloading file: %v", filename)
+				sProc.KickOff(2)
+				return true
+			})
+		},
+		2: func() {
+			req := co.NewGetReq("/file/sha256")
+			sender(req, func(resp *coap.Message) bool {
+				// log.Printf("sha256 for content: %v", hex.EncodeToString(resp.Payload))
+				if len(resp.Payload) != sha256.Size {
+					panic(fmt.Errorf("fatal error for sha256 request"))
+				}
+				coll := NewCollector(segs, filename, resp.Payload, sender)
+				coll.WindowSize = *fWinSize
+				coll.StartCollect(
+					func() { doCancel() },
+				)
+				return true
+			})
+		},
+	}
+	sProc.StartWorkSeq(&wg, ctx.Done(), workSeq)
+	sProc.KickOff(0)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Kill, os.Interrupt, syscall.SIGTERM)
@@ -358,10 +343,9 @@ func startRecvProc(sock net.Conn, respCh chan<- *coap.Message, wg *sync.WaitGrou
 	wg.Add(1)
 	go func() {
 		defer func() {
-			// log.Printf("leaving recv-proc")
-			wg.Done()
 			doCancel()
-			// log.Printf("leaving recv-proc 1a")
+			log.Printf("leaving recv-proc")
+			wg.Done()
 		}()
 		var ib [1024 * 1024]byte
 		for {
@@ -383,18 +367,12 @@ func startRecvProc(sock net.Conn, respCh chan<- *coap.Message, wg *sync.WaitGrou
 			if err != nil {
 				log.Fatalf("error recv: %v", err)
 			}
-			// log.Printf("new msg in: %v", getMsgSig(&msg))
-			respCh <- &msg // OK. GO ON.
+			// log.Printf("new msg in: %v", data.GetMsgSig(&msg))
+			select {
+			case respCh <- &msg: // OK. GO ON.
+			case <-time.After(10 * time.Second):
+				log.Printf("emmm.... taking too long")
+			}
 		}
 	}()
-}
-
-func genSerial(n int) []byte {
-	var buf [1024]byte
-	rand.Read(buf[:n])
-	return buf[:n]
-}
-
-func genMessageID() uint16 {
-	return msgIDer.NextID()
 }

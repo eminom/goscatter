@@ -1,4 +1,4 @@
-package data
+package coaputils
 
 import (
 	"crypto/rand"
