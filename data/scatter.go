@@ -101,8 +101,11 @@ func (s *Scatter) doInit(inpath string) *Scatter {
 
 	stat, err := os.Stat(inpath)
 	if err != nil || stat.IsDir() {
-		log.Printf("error for %v:%v (or directory)", inpath, err)
-		return nil
+		if err != nil {
+			log.Fatalf("error: %v", err)
+		} else {
+			log.Fatalf("error: a directory for %v", inpath)
+		}
 	}
 	if stat.Size() > FILE_SIZE_LIMIT {
 		log.Printf("file too large")
@@ -136,23 +139,6 @@ func (s *Scatter) doInit(inpath string) *Scatter {
 	log.Printf("sha256: %v", hex.EncodeToString(s.hashSha256))
 	log.Printf("loading done")
 	return s
-}
-
-func (s *Scatter) GenForbidden(req coap.Message, addr net.Addr) {
-
-	forb := coap.Message{
-		Type:      coap.Acknowledgement,
-		Code:      coap.Forbidden,
-		MessageID: req.MessageID,
-		Token:     req.Token,
-		Payload:   []byte("not very well"),
-	}
-	chunk, err := forb.MarshalBinary()
-	if err != nil {
-		log.Printf("error marshal: %v", err)
-		return
-	}
-	s.oCh <- &WorkItem{addr, chunk}
 }
 
 func (s *Scatter) Dispatch(req coap.Message, from net.Addr) {
@@ -228,12 +214,8 @@ func (s *Scatter) Dispatch(req coap.Message, from net.Addr) {
 	}
 
 	// fin
-	resp.Token = req.Token
 	resp.Type = coap.Acknowledgement
 	resp.MessageID = req.MessageID
-	ob, err := resp.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	s.oCh <- &WorkItem{from, ob}
+	resp.Token = req.Token
+	pushToOutch(resp, from, s.oCh)
 }

@@ -25,32 +25,34 @@ func main() {
 
 	addr, err := net.ResolveUDPAddr("udp", *fAddr)
 	if err != nil {
-		panic(err)
+		log.Fatalf("error resolving addr: %v", err)
 	}
 
-	startScatter(addr, *fContent)
+	ctx, doCancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	startScatter(addr, *fContent, &wg, ctx.Done())
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Kill, os.Interrupt, syscall.SIGTERM)
+	select {
+	case <-sigCh:
+	case <-ctx.Done():
+	}
+	log.Printf("cancelling...")
+	doCancel()
+	wg.Wait()
 
 	log.Printf("bye")
 }
 
-func startScatter(addr *net.UDPAddr, inputpath string) {
-
-	ctx, doCancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
+func startScatter(addr *net.UDPAddr, inputpath string, wg *sync.WaitGroup, doneCh <-chan struct{}) {
 	wg.Add(1)
-	go runScatter(addr, inputpath, &wg, ctx)
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Kill, os.Interrupt, syscall.SIGTERM)
-	<-sigCh
-	log.Printf("cancelling...")
-	doCancel()
-	wg.Wait()
+	go runScatter(addr, inputpath, wg, doneCh)
 }
 
-func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, ctx context.Context) {
+func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, doneCh <-chan struct{}) {
 	defer func() {
-		log.Printf("leaving scatter process")
+		log.Printf("leaving scat-ter process")
 		wg.Done()
 	}()
 
@@ -61,9 +63,13 @@ func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, ctx contex
 
 	var bigBuff [1024 * 1024]byte
 	workCh := make(chan *data.WorkItem, 1024)
+	respondForbidden := func(req coap.Message) {
+		workCh <- data.GenForbidden(req, addr)
+	}
 
+	sMan := data.NewServeMan(workCh)
 	scatter := data.NewScatter(inpath, workCh)
-	log.Printf("scatter ready")
+	log.Printf("scattering ready")
 	defer scatter.DoStop()
 
 	// write-procedure. one by one.
@@ -73,14 +79,26 @@ func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, ctx contex
 			log.Printf("leaving write-proc")
 			wg.Done()
 		}()
+	W100:
 		for {
 			select {
-			case <-ctx.Done():
-				return
+			case <-doneCh:
+				break W100
 			case wi := <-workCh:
 				uSock.WriteTo(wi.Buff, wi.Dest)
 			}
 		}
+
+	W101:
+		for {
+			select {
+			case <-workCh:
+				// purge this channel.
+			case <-time.After(2 * time.Second):
+				break W101
+			}
+		}
+
 	}()
 
 	const ParserCount = 4
@@ -91,7 +109,7 @@ func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, ctx contex
 			defer wg.Done()
 			for {
 				select {
-				case <-ctx.Done():
+				case <-doneCh:
 					return
 				case wi := <-bytesDisCh:
 					msg, err := coap.ParseMessage(wi.Buff)
@@ -99,11 +117,17 @@ func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, ctx contex
 					if err == nil {
 						switch msg.Type {
 						case coap.Confirmable:
-							if msg.Code == coap.GET {
+							switch msg.Code {
+							case coap.POST:
+								sMan.ProcessPost(msg, wi.Dest)
+							case coap.GET:
+								// TODO: first level message dispatching
 								scatter.Dispatch(msg, wi.Dest)
-							} else {
+							case coap.PUT:
+								sMan.ForwardPut(msg, wi.Dest)
+							default:
 								log.Printf("request type not supported: %v", msg.Type)
-								scatter.GenForbidden(msg, wi.Dest)
+								respondForbidden(msg)
 							}
 						default:
 							log.Printf("ignore msg: %v", msg.Type)
@@ -119,7 +143,7 @@ func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, ctx contex
 	// reader procedure
 	for {
 		select {
-		case <-ctx.Done():
+		case <-doneCh:
 			return
 		default:
 		}
@@ -134,18 +158,16 @@ func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, ctx contex
 			continue
 		}
 
-		// log.Printf("new req")
 		// must make the receiving buffer duplicated.
-		newWi := &data.WorkItem{from, bytes.Repeat(bigBuff[:n], 1)}
-	S100:
-		for {
-			select {
-			case bytesDisCh <- newWi:
-				break S100
-			default:
-				log.Printf("buff channel cramped **")
-				time.Sleep(1 * time.Second)
-			}
+		newWi := &data.WorkItem{
+			Dest: from,
+			Buff: bytes.Repeat(bigBuff[:n], 1),
+		}
+
+		select {
+		case <-doneCh:
+			return
+		case bytesDisCh <- newWi:
 		}
 	}
 
