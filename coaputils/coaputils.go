@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 
 	"github.com/eminom/go-coap"
 )
@@ -26,6 +27,18 @@ func NewGetReq(reqPath string) *coap.Message {
 		Token:     genSerial(8),
 	}
 	rv.SetPathString(reqPath)
+	return rv
+}
+
+func NewPutReqf(format string, a ...interface{}) *coap.Message {
+	rv := NewGetReq(fmt.Sprintf(format, a...))
+	rv.Code = coap.PUT
+	return rv
+}
+
+func NewPostReqf(format string, a ...interface{}) *coap.Message {
+	rv := NewGetReq(fmt.Sprintf(format, a...))
+	rv.Code = coap.POST
 	return rv
 }
 

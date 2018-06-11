@@ -59,3 +59,15 @@ func TestNameServerDos(t *testing.T) {
 		t.Fatalf("this name shall be deregistered already:%v", err)
 	}
 }
+
+func TestNameServerTres(t *testing.T) {
+	names := []string{"uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "cero"}
+	ns := NewNameServer()
+	for _, n := range names {
+		id, _ := ns.IdForName(n)
+		rhs, err := ns.NameForID(id)
+		if err != nil || rhs != n {
+			t.Fatalf("error")
+		}
+	}
+}

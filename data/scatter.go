@@ -1,14 +1,11 @@
 package data
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,25 +21,16 @@ var (
 	fDebugDups = false
 )
 
-const (
-	FILE_SIZE_LIMIT = 300 * 1024 * 1024
-	SegmentSize     = 512
-)
-
 type WorkItem struct {
 	Dest net.Addr
 	Buff []byte
 }
 
 type Scatter struct {
-	size       int
-	segCount   int
-	chunks     []Piece
-	hashSha256 []byte
+	*Fragger
 
-	originalName string
-	oCh          chan<- *WorkItem
-	markChWR     chan<- string
+	oCh      chan<- *WorkItem
+	markChWR chan<- string
 
 	runCtx   context.Context
 	doStop   context.CancelFunc
@@ -50,12 +38,11 @@ type Scatter struct {
 }
 
 func NewScatter(inpath string, ch chan<- *WorkItem) *Scatter {
-
 	markCh := make(chan string, 16)
 	rv := &Scatter{
-		oCh:          ch,
-		originalName: inpath,
-		markChWR:     markCh,
+		Fragger:  NewFragger(inpath),
+		oCh:      ch,
+		markChWR: markCh,
 	}
 
 	rv.runCtx, rv.doStop = context.WithCancel(context.Background())
@@ -86,7 +73,7 @@ func NewScatter(inpath string, ch chan<- *WorkItem) *Scatter {
 		}
 	}()
 
-	return rv.doInit(inpath)
+	return rv
 }
 
 func (s *Scatter) DoStop() {
@@ -95,50 +82,6 @@ func (s *Scatter) DoStop() {
 	alls := <-s.resOutCh
 	log.Printf("dups count: %v", dups)
 	log.Printf("%v in all.", alls)
-}
-
-func (s *Scatter) doInit(inpath string) *Scatter {
-
-	stat, err := os.Stat(inpath)
-	if err != nil || stat.IsDir() {
-		if err != nil {
-			log.Fatalf("error: %v", err)
-		} else {
-			log.Fatalf("error: a directory for %v", inpath)
-		}
-	}
-	if stat.Size() > FILE_SIZE_LIMIT {
-		log.Printf("file too large")
-		return nil
-	}
-	s.size = int(stat.Size())
-	s.segCount = (s.size + (SegmentSize - 1)) / SegmentSize
-	s.chunks = make([]Piece, s.segCount)
-
-	fin, err := os.Open(inpath)
-	if err != nil {
-		log.Printf("error opening %v:%v", inpath, err)
-		return nil
-	}
-	defer fin.Close()
-	var buff [SegmentSize]byte
-	log.Printf("loading `%v`...", inpath)
-	log.Printf("%v byte(s)", s.size)
-	log.Printf("%v segment(s)", s.segCount)
-
-	hMac := sha256.New()
-	for i := 0; ; i++ {
-		n, err := fin.Read(buff[:]) // see the doc: File.Read
-		if err != nil {
-			break
-		}
-		hMac.Write(buff[:n])
-		s.chunks[i] = NewPiece(bytes.Repeat(buff[:n], 1))
-	}
-	s.hashSha256 = hMac.Sum(nil)
-	log.Printf("sha256: %v", hex.EncodeToString(s.hashSha256))
-	log.Printf("loading done")
-	return s
 }
 
 func (s *Scatter) Dispatch(req coap.Message, from net.Addr) {

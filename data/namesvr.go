@@ -12,6 +12,7 @@ const (
 var (
 	nameServerOverflow = errors.New("name-server overflow")
 	noSuchName         = errors.New("this name is not registered")
+	noSuchID           = errors.New("no such id")
 )
 
 type NameSvr struct {
@@ -39,6 +40,14 @@ func (n *NameSvr) DeregisterName(name string) error {
 	delete(n.nameMap, usedID)
 	n.freeBit(usedID)
 	return nil
+}
+
+func (n *NameSvr) NameForID(v int) (string, error) {
+	rv, ok := n.nameMap[v]
+	if !ok {
+		return "", noSuchID
+	}
+	return rv, nil
 }
 
 func (n *NameSvr) IdForName(name string) (int, error) {

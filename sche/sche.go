@@ -5,6 +5,11 @@ import (
 	"sync"
 )
 
+type Sche interface {
+	KickOff(int)
+	StartWorkSeq(*sync.WaitGroup, <-chan struct{}, map[int]func())
+}
+
 type scheProc struct {
 	procCh chan int
 }
