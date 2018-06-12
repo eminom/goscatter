@@ -24,7 +24,6 @@ type Composer struct {
 	pieces     []Piece // chunk count to chunk-count
 	pieceSwap  []Piece
 	chunkState []int32
-	remains    int
 
 	doStop func()
 
@@ -87,7 +86,6 @@ func NewComposer(name string, shortid int, trait []byte, oCh chan<- *WorkItem, w
 		shortid:    shortid,
 		hash:       hash,
 		chunkCount: chunkCount,
-		remains:    chunkCount,
 		pieces:     make([]Piece, chunkCount),
 		pieceSwap:  make([]Piece, chunkCount),
 		chunkState: make([]int32, chunkCount),
@@ -98,7 +96,16 @@ func NewComposer(name string, shortid int, trait []byte, oCh chan<- *WorkItem, w
 
 func (c *Composer) DoFinish() bool {
 	defer c.doStop()
-	if 0 == c.remains {
+
+	remains := 0
+	for _, v := range c.chunkState {
+		if v != 2 {
+			remains++
+		}
+	}
+	if remains != 0 {
+		log.Printf("error: missing <%v> parts", remains)
+	} else {
 		tmpName := c.name + ".tmp"
 		if c.SaveToFile(tmpName, c.PiecesToArray(c.pieces)) {
 			log.Printf("verifying for <%v>...", c.name)
@@ -152,11 +159,11 @@ func (c *Composer) sinkSig(idx int, sig []byte) bool {
 		return false
 	}
 	c.pieceSwap[idx].Sig = sig
-	rv := c.pieceSwap[idx].VerifySig()
-	if rv {
+	accepted := c.pieceSwap[idx].VerifySig()
+	if accepted && atomic.CompareAndSwapInt32(&c.chunkState[idx], 0, 1) {
 		c.pieces[idx].Sig = sig
 	}
-	return rv
+	return accepted
 }
 
 // can be access simultaneously.
@@ -166,10 +173,9 @@ func (c *Composer) sinkChunk(idx int, chunk []byte) bool {
 		return false
 	}
 	c.pieceSwap[idx].Chunk = chunk
-	isVerified := c.pieceSwap[idx].VerifyContent()
-	if isVerified && atomic.CompareAndSwapInt32(&c.chunkState[idx], 0, 1) {
-		c.remains -= 1
+	accepted := c.pieceSwap[idx].VerifyContent()
+	if accepted && atomic.CompareAndSwapInt32(&c.chunkState[idx], 1, 2) {
 		c.pieces[idx].Chunk = chunk
 	}
-	return isVerified
+	return accepted
 }
