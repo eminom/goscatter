@@ -48,7 +48,7 @@ func NewCollector(segCount int, filename string, hmac256 []byte,
 	}
 }
 
-func (c *Collector) StartCollect(whenDone func()) {
+func (c *Collector) StartCollect(fileShortID int, whenDone func()) {
 	sender := c.sender
 
 	chunkArr := make([][]byte, c.segsCount)
@@ -95,13 +95,13 @@ func (c *Collector) StartCollect(whenDone func()) {
 			return
 		}
 		// log.Printf("req for %v", seqIdx)
-		req0 := co.NewGetReq(fmt.Sprintf("/file/%v/0", seqIdx))
+		req0 := co.NewGetReqf("/f/%v/%v/0", fileShortID, seqIdx)
 		var newPiece data.Piece
 		sender(req0, func(resp *coap.Message) bool {
 			newPiece.Sig = bytes.Repeat(resp.Payload, 1)
 			if newPiece.VerifySig() {
 				// log.Printf("sig for %v is ok", seqIdx)
-				req1 := co.NewGetReq(fmt.Sprintf("/file/%v/1", seqIdx))
+				req1 := co.NewGetReqf("/f/%v/%v/1", fileShortID, seqIdx)
 				sender(req1, func(rsp2 *coap.Message) bool {
 					newPiece.Chunk = bytes.Repeat(rsp2.Payload, 1)
 					if newPiece.VerifyContent() {
@@ -122,13 +122,33 @@ func (c *Collector) StartCollect(whenDone func()) {
 	}
 }
 
-func MakeSacarWork(proc Sche, winSize int, sender func(*coap.Message, func(*coap.Message) bool), doFinish func()) map[int]func() {
+func MakeSacarWork(proc Sche, filename string,
+	winSize int, sender func(*coap.Message, func(*coap.Message) bool), doFinish func()) map[int]func() {
 	var segs int
-	var filename string
+	var shortID int
 	return map[int]func(){
 		0: func() {
+			req := co.NewPostReqf("/rd/placeholder")
+			log.Printf("requesting for %v", filename)
+			req.Payload = []byte(filename)
+			sender(req, func(resp *coap.Message) bool {
+				if resp.Code == coap.Created {
+					var err error
+					shortID, err = strconv.Atoi(string(resp.Payload))
+					if err != nil {
+						panic(err)
+					}
+					log.Printf("read short-id: %v", shortID)
+					proc.KickOff(1)
+					return true
+				}
+				log.Printf("rd failed for<%v>:%v", resp.Code, string(resp.Payload))
+				return false
+			})
+		},
+		1: func() {
 			//~ Get length
-			req := co.NewGetReq("/file/segs")
+			req := co.NewGetReqf("/f/%v/segs", shortID)
 			sender(req, func(resp *coap.Message) bool {
 				var err error
 				segs, err = strconv.Atoi(string(resp.Payload))
@@ -136,21 +156,12 @@ func MakeSacarWork(proc Sche, winSize int, sender func(*coap.Message, func(*coap
 					panic(err)
 				}
 				log.Printf("seg-count: %v", segs)
-				proc.KickOff(1)
-				return true
-			})
-		},
-		1: func() {
-			req := co.NewGetReq("/file/name")
-			sender(req, func(resp *coap.Message) bool {
-				filename = string(resp.Payload)
-				log.Printf("downloading file: %v", filename)
 				proc.KickOff(2)
 				return true
 			})
 		},
 		2: func() {
-			req := co.NewGetReq("/file/sha256")
+			req := co.NewGetReqf("/f/%v/sha256", shortID)
 			sender(req, func(resp *coap.Message) bool {
 				// log.Printf("sha256 for content: %v", hex.EncodeToString(resp.Payload))
 				if len(resp.Payload) != sha256.Size {
@@ -158,9 +169,24 @@ func MakeSacarWork(proc Sche, winSize int, sender func(*coap.Message, func(*coap
 				}
 				coll := NewCollector(segs, filename, resp.Payload, sender)
 				coll.WindowSize = winSize
-				coll.StartCollect(doFinish)
+				coll.StartCollect(shortID, func() {
+					proc.KickOff(3)
+				})
+				return true
+			})
+		},
+		3: func() {
+			req := co.NewPostReqf("/done/%v", shortID)
+			sender(req, func(resp *coap.Message) bool {
+				if resp.Code != coap.Changed {
+					log.Printf("server side finish ok")
+				} else {
+					log.Printf("server side finish error:%v", resp.Code)
+				}
+				doFinish()
 				return true
 			})
 		},
 	}
+
 }

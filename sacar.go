@@ -15,6 +15,7 @@ import (
 	"time"
 
 	co "./coaputils"
+	"./comm"
 	"./sche"
 
 	"github.com/eminom/go-coap"
@@ -169,18 +170,20 @@ func main() {
 
 	sProc := sche.NewScheProc()
 	if *fUpload != "" {
-		if !isFileExists(*fUpload) {
+		if !comm.IsFileExists(*fUpload) {
 			log.Fatalf("upload path error: %v", *fUpload)
 		}
 		sProc.StartWorkSeq(&wg, ctx.Done(), sche.MakeTransmitterWork(
 			sProc, *fUpload, *fWinSize, sender,
 			func() { doCancel() },
 		))
-	} else {
+	} else if len(flag.Args()) > 0 {
 		sProc.StartWorkSeq(&wg, ctx.Done(), sche.MakeSacarWork(
-			sProc, *fWinSize, sender,
+			sProc, flag.Args()[0], *fWinSize, sender,
 			func() { doCancel() }),
 		)
+	} else {
+		log.Fatalf("not enough parameter")
 	}
 	sProc.KickOff(0)
 
@@ -233,9 +236,4 @@ func startRecvProc(sock net.Conn, respCh chan<- *coap.Message, wg *sync.WaitGrou
 			}
 		}
 	}()
-}
-
-func isFileExists(inpath string) bool {
-	stat, err := os.Stat(inpath)
-	return nil == err && !stat.IsDir()
 }

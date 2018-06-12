@@ -19,7 +19,7 @@ func GetMsgSig(msg *coap.Message) string {
 	return hex.EncodeToString(msg.Token) + "-" + hex.EncodeToString(b[:])
 }
 
-func NewGetReq(reqPath string) *coap.Message {
+func newGetReq(reqPath string) *coap.Message {
 	rv := &coap.Message{
 		Type:      coap.Confirmable,
 		Code:      coap.GET,
@@ -30,14 +30,18 @@ func NewGetReq(reqPath string) *coap.Message {
 	return rv
 }
 
+func NewGetReqf(format string, a ...interface{}) *coap.Message {
+	return newGetReq(fmt.Sprintf(format, a...))
+}
+
 func NewPutReqf(format string, a ...interface{}) *coap.Message {
-	rv := NewGetReq(fmt.Sprintf(format, a...))
+	rv := newGetReq(fmt.Sprintf(format, a...))
 	rv.Code = coap.PUT
 	return rv
 }
 
 func NewPostReqf(format string, a ...interface{}) *coap.Message {
-	rv := NewGetReq(fmt.Sprintf(format, a...))
+	rv := newGetReq(fmt.Sprintf(format, a...))
 	rv.Code = coap.POST
 	return rv
 }

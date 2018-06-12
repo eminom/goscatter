@@ -68,9 +68,6 @@ func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, doneCh <-c
 	}
 
 	sMan := data.NewServeMan(workCh)
-	scatter := data.NewScatter(inpath, workCh)
-	log.Printf("scattering ready")
-	defer scatter.DoStop()
 
 	// write-procedure. one by one.
 	wg.Add(1)
@@ -101,7 +98,7 @@ func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, doneCh <-c
 
 	}()
 
-	const ParserCount = 4
+	const ParserCount = 8
 	bytesDisCh := make(chan *data.WorkItem, 1024)
 	for i := 0; i < ParserCount; i++ {
 		wg.Add(1)
@@ -121,8 +118,7 @@ func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, doneCh <-c
 							case coap.POST:
 								sMan.ProcessPost(msg, wi.Dest)
 							case coap.GET:
-								// TODO: first level message dispatching
-								scatter.Dispatch(msg, wi.Dest)
+								sMan.ForwardGet(msg, wi.Dest)
 							case coap.PUT:
 								sMan.ForwardPut(msg, wi.Dest)
 							default:

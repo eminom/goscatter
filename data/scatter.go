@@ -8,7 +8,8 @@ import (
 	"net"
 	"regexp"
 	"strconv"
-	"strings"
+	"sync"
+	"time"
 
 	"github.com/eminom/go-coap"
 )
@@ -32,36 +33,47 @@ type Scatter struct {
 	oCh      chan<- *WorkItem
 	markChWR chan<- string
 
-	runCtx   context.Context
-	doStop   context.CancelFunc
-	resOutCh <-chan int
+	doStop func()
+
+	isDebug bool
+
+	heartBeatCh chan<- struct{}
 }
 
-func NewScatter(inpath string, ch chan<- *WorkItem) *Scatter {
+// when-finalize: can be called only once.
+func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize func()) *Scatter {
 	markCh := make(chan string, 16)
-	rv := &Scatter{
-		Fragger:  NewFragger(inpath),
-		oCh:      ch,
-		markChWR: markCh,
+	runCtx, doStopAhora := context.WithCancel(context.Background())
+	resCh := make(chan int, 2)
+
+	var wg sync.WaitGroup
+
+	// The exit point>>
+	var stopOnce sync.Once
+	stopFunc := func() {
+		stopOnce.Do(func() {
+			doStopAhora()
+			whenFinalize()
+		})
 	}
 
-	rv.runCtx, rv.doStop = context.WithCancel(context.Background())
-
-	resCh := make(chan int)
-	rv.resOutCh = resCh
-
+	hbChan := make(chan struct{}, 1)
+	// Now go
+	wg.Add(1)
 	go func() {
 		dupsCount, totsCount := 0, 0
 		defer func() {
 			resCh <- dupsCount
 			resCh <- totsCount
+			wg.Done()
 		}()
-
 		statMap := make(map[string]int)
 		for {
 			select {
-			case <-rv.runCtx.Done():
+			case <-runCtx.Done():
 				return
+
+				// This is for debugging purpose:
 			case newMark := <-markCh:
 				totsCount++
 				statMap[newMark] += 1
@@ -69,96 +81,92 @@ func NewScatter(inpath string, ch chan<- *WorkItem) *Scatter {
 					log.Printf("duplicate for %v", newMark)
 					dupsCount++
 				}
+			case <-time.After(15 * time.Second):
+				stopFunc()
+				return
+				//TODO: make this 15 parameterized.
+			case <-hbChan:
 			}
 		}
 	}()
 
-	return rv
+	return &Scatter{
+		isDebug:  fDebugDups, //
+		Fragger:  NewFragger(inpath),
+		oCh:      ch,
+		markChWR: markCh,
+		doStop: func() {
+			stopFunc()
+			dups := <-resCh
+			alls := <-resCh
+			log.Printf("dups count: %v", dups)
+			log.Printf("%v in all.", alls)
+			wg.Wait()
+		},
+		heartBeatCh: hbChan,
+	}
 }
 
 func (s *Scatter) DoStop() {
 	s.doStop()
-	dups := <-s.resOutCh
-	alls := <-s.resOutCh
-	log.Printf("dups count: %v", dups)
-	log.Printf("%v in all.", alls)
 }
 
-func (s *Scatter) Dispatch(req coap.Message, from net.Addr) {
-	// log.Printf("dispatching")
-	paths := req.Path()
-
-	var resp *coap.Message
-	(func() {
-		if len(paths) >= 2 {
-			if paths[0] == "file" {
-				if IsDigit.MatchString(paths[1]) {
-					if idx, err := strconv.Atoi(paths[1]); nil == err && idx >= 0 && idx < s.segCount {
-						if len(paths) >= 3 {
-							if sel, err := strconv.Atoi(paths[2]); nil == err && sel >= 0 && sel < 2 {
-								// 0 for sig
-								switch sel {
-								case 0:
-									resp = &coap.Message{
-										Code:    coap.Content,
-										Payload: s.chunks[idx].Sig,
-									}
-								case 1:
-									resp = &coap.Message{
-										Code:    coap.Content,
-										Payload: s.chunks[idx].Chunk,
-									}
-								default:
-									log.Printf("invalid sub[2]")
-								}
-							}
-						}
-					}
-				} else {
-					switch paths[1] {
-					case "segs":
-						resp = &coap.Message{
-							Code:    coap.Content,
-							Payload: []byte(fmt.Sprintf("%v", s.segCount)),
-						}
-					case "name":
-						resp = &coap.Message{
-							Code:    coap.Content,
-							Payload: []byte(fmt.Sprintf("%v", s.originalName)),
-						}
-					case "sha256":
-						// log.Printf("responed with hash: %v", hex.EncodeToString(s.hashSha256))
-						resp = &coap.Message{
-							Code:    coap.Content,
-							Payload: s.hashSha256,
-						}
-					default:
-						log.Printf("unknown <%v>", paths[1])
-					}
-				}
-			} else {
-				log.Printf("unknown first-level <%v>", paths[0])
+func (s *Scatter) RipUp(instrs []string, req *coap.Message, from net.Addr) {
+	var resp = &coap.Message{
+		Code:      coap.BadRequest,
+		MessageID: req.MessageID,
+		Token:     req.Token,
+		Payload:   []byte("bad request"),
+	}
+	var idxstr, sel string
+	if len(instrs) >= 1 {
+		idxstr = instrs[0]
+	}
+	if len(instrs) >= 2 {
+		sel = instrs[1]
+	}
+	if IsDigit.MatchString(idxstr) {
+		idx, err := strconv.Atoi(idxstr)
+		selIdx, err1 := strconv.Atoi(sel)
+		if nil == err && nil == err1 && idx >= 0 && idx < s.segCount {
+			// 0 for sig
+			switch selIdx {
+			case 0:
+				resp.Code = coap.Content
+				resp.Payload = s.chunks[idx].Sig
+			case 1:
+				resp.Code = coap.Content
+				resp.Payload = s.chunks[idx].Chunk
+			default:
+				log.Printf("invalid sel-value [%v]", sel)
 			}
 		} else {
-			log.Printf("unknown uri-path: <%v>", strings.Join(paths, "/"))
-		}
-	})()
-
-	if nil == resp {
-		resp = &coap.Message{
-			Code:    coap.BadRequest,
-			Payload: []byte("bad request"),
+			log.Printf("format error for get: <%v/%v>", idxstr, sel)
 		}
 	} else {
-		// mark or not.
-		if fDebugDups {
-			s.markChWR <- fmt.Sprintf("%x", req.MessageID) + "-" + hex.EncodeToString(req.Token)
+		switch idxstr {
+		case "segs":
+			resp.Code = coap.Content
+			resp.Payload = []byte(fmt.Sprintf("%v", s.segCount))
+		case "name":
+			resp.Code = coap.Content
+			resp.Payload = []byte(fmt.Sprintf("%v", s.originalName))
+		case "sha256":
+			resp.Code = coap.Content
+			resp.Payload = s.hashSha256
+		default:
+			log.Printf("unknown <%v>", idxstr)
 		}
 	}
 
+	// mark or not.
+	if s.isDebug {
+		s.markChWR <- fmt.Sprintf("%x", req.MessageID) + "-" + hex.EncodeToString(req.Token)
+	}
+
+	// heart beat.
+	s.heartBeatCh <- struct{}{}
+
 	// fin
-	resp.Type = coap.Acknowledgement
-	resp.MessageID = req.MessageID
-	resp.Token = req.Token
 	pushToOutch(resp, from, s.oCh)
 }

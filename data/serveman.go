@@ -4,30 +4,26 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"strconv"
-	"sync"
+
+	"../comm"
 
 	"github.com/eminom/go-coap"
 )
 
 type ServeMan struct {
 	ansCh chan<- *WorkItem
-
-	composerLock *sync.RWMutex
-	compoMap     map[string]*Composer
-	namesvr      *NameSvr
-
 	// scatterMap map[string]*Scatter
 	// scatterLock  *sync.RWMutex
+
+	*composerMan
+	*scatterMan
 }
 
 func NewServeMan(ansCh chan<- *WorkItem) *ServeMan {
 	rv := &ServeMan{
-		ansCh: ansCh,
-
-		composerLock: new(sync.RWMutex),
-		compoMap:     make(map[string]*Composer),
-		namesvr:      NewNameServer(),
+		ansCh:       ansCh,
+		composerMan: newComposerMan(ansCh),
+		scatterMan:  newScatterMan(ansCh),
 
 		// scatterLock: new(sync.RWMutex),
 		// scatterMap:  make(map[string]*Scatter),
@@ -65,8 +61,22 @@ func (sm *ServeMan) ProcessPost(req coap.Message, from net.Addr) {
 			}
 
 		case "rd":
-			log.Fatalf("not implmented yet")
-			//TODO: initiate a scatter here.
+			if !comm.IsFileExists(string(req.Payload)) {
+				resp.Type = coap.Reset
+				resp.Payload = []byte(fmt.Sprintf("no such file: %v", string(req.Payload)))
+			} else if thisID, ok := sm.makeScatter(string(req.Payload)); ok {
+				resp.Code = coap.Created
+				resp.Payload = []byte(fmt.Sprintf("%02x", thisID))
+			}
+
+		case "done":
+			if scatter := sm.getScatterForID(paths[1]); scatter != nil {
+				scatter.DoStop()
+				resp.Code = coap.Changed
+			} else {
+				log.Printf("no such scatter: <%v>", paths[1])
+				resp.Type = coap.Reset
+			}
 		}
 	}
 
@@ -74,7 +84,7 @@ func (sm *ServeMan) ProcessPost(req coap.Message, from net.Addr) {
 	pushToOutch(resp, from, sm.ansCh)
 }
 
-func (sm *ServeMan) replayGeneralError(req coap.Message, from net.Addr) {
+func (sm *ServeMan) replyGeneralError(req coap.Message, from net.Addr) {
 	pushToOutch(&coap.Message{
 		Token:     req.Token,
 		MessageID: req.MessageID,
@@ -99,7 +109,7 @@ func (sm *ServeMan) ForwardPut(req coap.Message, from net.Addr) {
 	paths := req.Path()
 	if len(paths) <= 0 {
 		log.Printf("error path for put")
-		sm.replayGeneralError(req, from)
+		sm.replyGeneralError(req, from)
 		return
 	}
 	switch paths[0] {
@@ -117,50 +127,29 @@ func (sm *ServeMan) ForwardPut(req coap.Message, from net.Addr) {
 	}
 }
 
-func (sm *ServeMan) getComposerForID(shortname string) (rv *Composer) {
-	sm.composerLock.RLock()
-	if id, err := strconv.ParseInt(shortname, 16, 64); nil == err {
-		if name, err := sm.namesvr.NameForID(int(id)); nil == err {
-			rv = sm.compoMap[name]
-		} else {
-			log.Printf("error id: %v", err)
+// Uri-Path: /f/short-id/index-of-chunk/select(0/1)
+func (sm *ServeMan) ForwardGet(req coap.Message, from net.Addr) {
+	paths := req.Path()
+	if len(paths) <= 0 {
+		log.Printf("error path for get")
+		sm.replyGeneralError(req, from)
+		return
+	}
+	switch paths[0] {
+	case "f":
+		for {
+			if len(paths) >= 2 {
+				s := sm.getScatterForID(paths[1])
+				if s != nil {
+					s.RipUp(paths[2:], &req, from)
+					break
+				}
+			}
+			sm.replayErrorWithReset(req, from, "no such scatter")
+			break
 		}
-	} else {
-		log.Printf("error parsing 16-based id: %v", err)
+	default:
+		log.Printf("unknown protocal: <%v>", paths[0])
 	}
-	sm.composerLock.RUnlock()
-	return
-}
 
-func (sm *ServeMan) makeComposer(name string, payload []byte) (int, bool) {
-	sm.composerLock.Lock()
-	defer sm.composerLock.Unlock()
-	if _, ok := sm.compoMap[name]; ok {
-		// Already exist !
-		log.Printf("already exist. you may check it out")
-		return 0, false
-	}
-	newID, err := sm.namesvr.IdForName(name)
-	if err != nil {
-		log.Printf("error map to id: %v", err)
-		return 0, false
-	}
-	sm.compoMap[name] = NewComposer(name, newID, payload, sm.ansCh, func() {
-		sm.finalizeComposer(name)
-	})
-	return newID, true
 }
-
-func (sm *ServeMan) finalizeComposer(name string) {
-	sm.composerLock.Lock()
-	if _, ok := sm.compoMap[name]; !ok {
-		log.Fatalf("error: %v is not in composer-map", name)
-	}
-	if sm.namesvr.DeregisterName(name) != nil {
-		log.Fatalf("must stay the same as composer-name map")
-	}
-	delete(sm.compoMap, name)
-	sm.composerLock.Unlock()
-}
-
-//TODO: Processing of scatter-map

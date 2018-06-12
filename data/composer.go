@@ -89,8 +89,11 @@ func NewComposer(name string, shortid int, trait []byte, oCh chan<- *WorkItem, w
 		pieces:     make([]Piece, chunkCount),
 		pieceSwap:  make([]Piece, chunkCount),
 		chunkState: make([]int32, chunkCount),
-		doStop:     thisStop,
 		heartBeat:  hb,
+		doStop: func() {
+			thisStop()
+			wg.Wait()
+		},
 	}
 }
 
