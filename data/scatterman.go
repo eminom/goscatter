@@ -41,11 +41,11 @@ func (sm *scatterMan) makeScatter(name string) (int, bool) {
 
 	sm.smLock.Lock()
 	defer sm.smLock.Unlock()
-	if _, ok := sm.scatterMap[name]; ok {
-		// Already exist !
-		log.Printf("already exist. you may check it out")
-		return 0, false
-	}
+	// if _, ok := sm.scatterMap[name]; ok {
+	// 	// Already exist !
+	// 	log.Printf("already exist. you may check it out")
+	// 	return 0, false
+	// }
 	newID, err := sm.smNameSvr.IdForName(name)
 	if err != nil {
 		log.Printf("error map to id: %v", err)
