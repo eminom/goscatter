@@ -41,11 +41,14 @@ func (sm *scatterMan) makeScatter(name string) (int, bool) {
 
 	sm.smLock.Lock()
 	defer sm.smLock.Unlock()
-	// if _, ok := sm.scatterMap[name]; ok {
-	// 	// Already exist !
-	// 	log.Printf("already exist. you may check it out")
-	// 	return 0, false
-	// }
+
+	// If there are more than one user to request for the same file at the same time
+	// There will be some problems.
+	if _, ok := sm.scatterMap[name]; ok {
+		// Already exist !
+		log.Printf("already exist. you may check it out")
+		return 0, false
+	}
 	newID, err := sm.smNameSvr.IdForName(name)
 	if err != nil {
 		log.Printf("error map to id: %v", err)
@@ -60,10 +63,10 @@ func (sm *scatterMan) makeScatter(name string) (int, bool) {
 func (sm *scatterMan) finalizeScatter(name string) {
 	sm.smLock.Lock()
 	if _, ok := sm.scatterMap[name]; !ok {
-		log.Fatalf("error: %v is not in composer-map", name)
+		log.Fatalf("error: %v is not in scatter-map", name)
 	}
 	if sm.smNameSvr.DeregisterName(name) != nil {
-		log.Fatalf("must stay the same as composer-name map")
+		log.Fatalf("must stay the same as scatter-name map")
 	}
 	delete(sm.scatterMap, name)
 	sm.smLock.Unlock()
