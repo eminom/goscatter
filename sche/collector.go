@@ -13,6 +13,7 @@ import (
 	"time"
 
 	co "../coaputils"
+	"../comm"
 	"../data"
 
 	"github.com/eminom/go-coap"
@@ -143,7 +144,8 @@ func MakeSacarWork(proc Sche, filename string,
 					return true
 				}
 				log.Printf("rd failed for<%v>:%v", resp.Code, string(resp.Payload))
-				return false
+				doFinish() // fail and quit.
+				return true
 			})
 		},
 		1: func() {
@@ -178,8 +180,9 @@ func MakeSacarWork(proc Sche, filename string,
 		3: func() {
 			req := co.NewPostReqf("/done/%v", shortID)
 			sender(req, func(resp *coap.Message) bool {
-				if resp.Code != coap.Changed {
+				if resp.Code == coap.Changed {
 					log.Printf("server side finish ok")
+					comm.SetExitCode(0)
 				} else {
 					log.Printf("server side finish error:%v", resp.Code)
 				}

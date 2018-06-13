@@ -23,7 +23,7 @@ import (
 
 var (
 	fAddr    = flag.String("addr", "localhost:16666", "host address")
-	fWinSize = flag.Int("s", 4, "window size for batching")
+	fWinSize = flag.Int("s", 32, "window size for batching")
 	fUpload  = flag.String("u", "", "upload file path")
 )
 
@@ -61,11 +61,11 @@ func makeSender(uSock *net.UDPConn,
 	msgCh := make(chan *coap.Message)
 	// It was strange that, the buffer size is 0 perform the best !
 
-	for b := 0; b < 2; b++ {
+	for b := 0; b < 1; b++ {
 		wg.Add(1)
 		go func(workid int) {
 			defer func() {
-				log.Printf("leavin callback-relay-proc(%v)", workid)
+				//log.Printf("leavin callback-relay-proc(%v)", workid)
 				wg.Done()
 			}()
 			for {
@@ -97,7 +97,7 @@ func makeSender(uSock *net.UDPConn,
 	wg.Add(1)
 	go func() {
 		defer func() {
-			log.Printf("leavin batch-proc")
+			// log.Printf("leavin batch-proc")
 			wg.Done()
 		}()
 		for batchOut := 0; ; batchOut++ {
@@ -148,6 +148,13 @@ func makeSender(uSock *net.UDPConn,
 }
 
 func main() {
+	defer func() {
+		comm.QuitProgram()
+	}()
+	masterEnt()
+}
+
+func masterEnt() {
 	addr, err := net.ResolveUDPAddr("udp", *fAddr)
 	if nil != err {
 		panic(err)
@@ -164,7 +171,7 @@ func main() {
 	doCancel := context.CancelFunc(func() {
 		doCancel0()
 		doPreTrigger()
-		log.Printf("cancelling ...")
+		// log.Printf("cancelling ...")
 	})
 	startRecvProc(sock, respCh, &wg, doCancel, ctx)
 
@@ -205,7 +212,7 @@ func startRecvProc(sock net.Conn, respCh chan<- *coap.Message, wg *sync.WaitGrou
 	go func() {
 		defer func() {
 			doCancel()
-			log.Printf("leaving recv-proc")
+			// log.Printf("leaving recv-proc")
 			wg.Done()
 		}()
 		var ib [1024 * 1024]byte
@@ -232,7 +239,7 @@ func startRecvProc(sock net.Conn, respCh chan<- *coap.Message, wg *sync.WaitGrou
 			select {
 			case respCh <- &msg: // OK. GO ON.
 			case <-time.After(10 * time.Second):
-				log.Printf("emmm.... taking too long")
+				// log.Printf("emmm.... taking too long")
 			}
 		}
 	}()

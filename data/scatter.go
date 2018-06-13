@@ -99,14 +99,19 @@ func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize fu
 			stopFunc()
 			dups := <-resCh
 			alls := <-resCh
-			log.Printf("dups count: %v", dups)
-			log.Printf("%v in all.", alls)
+			if fDebugDups {
+				log.Printf("info for %v", inpath)
+				log.Printf("dups count: %v", dups)
+				log.Printf("%v in all.", alls)
+			}
+			log.Printf("%v(%v) halt *****", inpath, shortid)
 			wg.Wait()
 		},
 		heartBeatCh: hbChan,
 	}
 }
 
+// Technically, it can be called for only once.
 func (s *Scatter) DoStop() {
 	s.doStop()
 }

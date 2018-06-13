@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	co "../coaputils"
+	"../comm"
 	"../data"
 
 	"github.com/eminom/go-coap"
@@ -98,6 +99,7 @@ func MakeTransmitterWork(proc Sche, inpath string, winSize int,
 			sender(req, func(resp *coap.Message) bool {
 				if resp.Code == coap.Changed {
 					log.Printf("fin ok")
+					comm.SetExitCode(0) // mark it as successful.
 				} else {
 					log.Printf("server fin failed")
 				}

@@ -29,7 +29,7 @@ func (s *scheProc) StartWorkSeq(wg *sync.WaitGroup, doneCh <-chan struct{}, work
 	wg.Add(1)
 	go func() {
 		defer func() {
-			log.Printf("leavin seq-work")
+			// log.Printf("leavin seq-work")
 			wg.Done()
 		}()
 		var workI int

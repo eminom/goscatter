@@ -98,7 +98,7 @@ func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, doneCh <-c
 
 	}()
 
-	const ParserCount = 8
+	const ParserCount = 4
 	bytesDisCh := make(chan *data.WorkItem, 1024)
 	for i := 0; i < ParserCount; i++ {
 		wg.Add(1)
