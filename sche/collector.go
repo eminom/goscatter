@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -17,6 +18,10 @@ import (
 	"../data"
 
 	"github.com/eminom/go-coap"
+)
+
+var (
+	fVerbose = flag.Bool("v", false, "verbose for sacar")
 )
 
 const (
@@ -49,7 +54,7 @@ func NewCollector(segCount int, filename string, hmac256 []byte,
 	}
 }
 
-func (c *Collector) StartCollect(fileShortID int, whenDone func()) {
+func (c *Collector) StartCollect(fileShortID int, whenDone func(), verbose bool) {
 	sender := c.sender
 
 	chunkArr := make([][]byte, c.segsCount)
@@ -95,7 +100,10 @@ func (c *Collector) StartCollect(fileShortID int, whenDone func()) {
 			}
 			return
 		}
-		// log.Printf("req for %v", seqIdx)
+
+		if verbose {
+			log.Printf("req for %v", seqIdx)
+		}
 		req0 := co.NewGetReqf("/f/%v/%v/0", fileShortID, seqIdx)
 		var newPiece data.Piece
 		sender(req0, func(resp *coap.Message) bool {
@@ -173,7 +181,7 @@ func MakeSacarWork(proc Sche, filename string,
 				coll.WindowSize = winSize
 				coll.StartCollect(shortID, func() {
 					proc.KickOff(3)
-				})
+				}, *fVerbose)
 				return true
 			})
 		},
