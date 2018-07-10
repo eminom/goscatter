@@ -22,6 +22,7 @@ import (
 )
 
 var (
+	fBind    = flag.String("bind", ":0", "local address")
 	fAddr    = flag.String("addr", "localhost:16666", "host address")
 	fWinSize = flag.Int("s", 32, "window size for batching")
 	fUpload  = flag.String("u", "", "upload file path")
@@ -157,12 +158,17 @@ func main() {
 func masterEnt() {
 	addr, err := net.ResolveUDPAddr("udp", *fAddr)
 	if nil != err {
-		panic(err)
+		log.Fatalf("error resovling host address: %v", err)
 	}
 
-	sock, err := net.DialUDP("udp", nil, addr)
+	esteAddr, err := net.ResolveUDPAddr("udp", *fBind)
+	if nil != err {
+		log.Fatalf("error resolving local address: %v", err)
+	}
+
+	sock, err := net.DialUDP("udp", esteAddr, addr)
 	if err != nil {
-		panic(err)
+		log.Fatalf("error: %v", err)
 	}
 
 	var wg sync.WaitGroup
