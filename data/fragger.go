@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"log"
 	"os"
+
+	"github.com/eminom/godirutil"
 )
 
 const (
@@ -24,6 +27,13 @@ type Fragger struct {
 }
 
 func NewFragger(inpath string) *Fragger {
+	if !IsSpecialDirName(inpath) {
+		return newFraggerForFile(inpath)
+	}
+	return newFraggerForFileList()
+}
+
+func newFraggerForFile(inpath string) *Fragger {
 	stat, err := os.Stat(inpath)
 	if err != nil || stat.IsDir() {
 		if err != nil {
@@ -35,20 +45,23 @@ func NewFragger(inpath string) *Fragger {
 	if stat.Size() > FileSizeLimit {
 		log.Fatalf("file too large")
 	}
-	size := int(stat.Size())
-	segCount := (size + (SegmentSize - 1)) / SegmentSize
-	chunks := make([]Piece, segCount)
-
 	fin, err := os.Open(inpath)
 	if err != nil {
 		log.Fatalf("error opening %v:%v", inpath, err)
 	}
 	defer fin.Close()
+	return newFraggerFromStream(fin, int(stat.Size()), inpath)
+}
+
+func newFraggerFromStream(instream io.Reader, size int, prompt string) *Fragger {
+	segCount := (size + (SegmentSize - 1)) / SegmentSize
+	chunks := make([]Piece, segCount)
+
 	var buff [SegmentSize]byte
 
 	hMac := sha256.New()
 	for i := 0; ; i++ {
-		n, err := fin.Read(buff[:]) // see the doc: File.Read
+		n, err := instream.Read(buff[:]) // see the doc: File.Read
 		if err != nil {
 			break
 		}
@@ -58,7 +71,7 @@ func NewFragger(inpath string) *Fragger {
 	hashSha256 := hMac.Sum(nil)
 
 	if IfDebugFragger {
-		log.Printf("loading `%v`...", inpath)
+		log.Printf("loading `%v`...", prompt)
 		log.Printf("%v byte(s)", size)
 		log.Printf("%v segment(s)", segCount)
 		log.Printf("sha256: %v", hex.EncodeToString(hashSha256))
@@ -70,7 +83,7 @@ func NewFragger(inpath string) *Fragger {
 		segCount:     segCount,
 		chunks:       chunks,
 		hashSha256:   hashSha256,
-		originalName: inpath,
+		originalName: prompt,
 	}
 }
 
@@ -84,4 +97,14 @@ func (f *Fragger) GetSize() int {
 
 func (f *Fragger) GetPieces() []Piece {
 	return f.chunks
+}
+
+func newFraggerForFileList() *Fragger {
+	ob := bytes.NewBuffer(nil)
+	files := dutil.ListFiles(".", dutil.StdIgnorer, dutil.AllFiles)
+	for _, file := range files {
+		io.WriteString(ob, file)
+		io.WriteString(ob, "\n")
+	}
+	return newFraggerFromStream(ob, ob.Len(), SpecialDirName)
 }

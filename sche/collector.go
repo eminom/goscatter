@@ -141,7 +141,7 @@ func MakeSacarWork(proc Sche, filename string,
 			log.Printf("requesting for %v", filename)
 			req.Payload = []byte(filename)
 			sender(req, func(resp *coap.Message) bool {
-				if resp.Code == coap.Created {
+				if coap.Acknowledgement == resp.Type && resp.Code == coap.Created {
 					var err error
 					shortID, err = strconv.Atoi(string(resp.Payload))
 					if err != nil {
@@ -188,11 +188,11 @@ func MakeSacarWork(proc Sche, filename string,
 		3: func() {
 			req := co.NewPostReqf("/done/%v", shortID)
 			sender(req, func(resp *coap.Message) bool {
-				if resp.Code == coap.Changed {
+				if coap.Acknowledgement == resp.Type && resp.Code == coap.Changed {
 					log.Printf("server side finish ok")
 					comm.SetExitCode(0)
 				} else {
-					log.Printf("server side finish error:%v", resp.Code)
+					log.Printf("server side finish error:%v - %v", resp.Type, resp.Code)
 				}
 				doFinish()
 				return true

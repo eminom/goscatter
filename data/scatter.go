@@ -27,6 +27,11 @@ type WorkItem struct {
 	Buff []byte
 }
 
+type IScatter interface {
+	RipUp(instrs []string, req *coap.Message, from net.Addr)
+	DoStop()
+}
+
 type Scatter struct {
 	*Fragger
 
@@ -41,7 +46,7 @@ type Scatter struct {
 }
 
 // when-finalize: can be called only once.
-func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize func()) *Scatter {
+func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize func()) IScatter {
 	markCh := make(chan string, 16)
 	runCtx, doStopAhora := context.WithCancel(context.Background())
 	resCh := make(chan int, 2)
@@ -52,9 +57,19 @@ func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize fu
 	var stopOnce sync.Once
 	stopFunc := func() {
 		stopOnce.Do(func() {
-			doStopAhora()
+			log.Printf("%v is quitting.", inpath)
 			whenFinalize()
+			doStopAhora()
 		})
+	}
+
+	timeoutDuration := 15 * time.Second
+	if IsSpecialDirName(inpath) {
+		var e1 error
+		timeoutDuration, e1 = time.ParseDuration(fmt.Sprintf("%vh", 365*100*24))
+		if e1 != nil {
+			panic(e1)
+		}
 	}
 
 	hbChan := make(chan struct{}, 1)
@@ -63,6 +78,7 @@ func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize fu
 	go func() {
 		dupsCount, totsCount := 0, 0
 		defer func() {
+			stopFunc()
 			resCh <- dupsCount
 			resCh <- totsCount
 			wg.Done()
@@ -81,8 +97,7 @@ func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize fu
 					log.Printf("duplicate for %v", newMark)
 					dupsCount++
 				}
-			case <-time.After(15 * time.Second):
-				stopFunc()
+			case <-time.After(timeoutDuration):
 				return
 				//TODO: make this 15 parameterized.
 			case <-hbChan:
@@ -90,7 +105,7 @@ func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize fu
 		}
 	}()
 
-	return &Scatter{
+	rv := &Scatter{
 		isDebug:  fDebugDups, //
 		Fragger:  NewFragger(inpath),
 		oCh:      ch,
@@ -109,10 +124,21 @@ func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize fu
 		},
 		heartBeatCh: hbChan,
 	}
+
+	if IsSpecialDirName(inpath) {
+		return &ScatterLive{
+			Scatter: rv,
+		}
+	}
+	return rv
 }
 
 // Technically, it can be called for only once.
 func (s *Scatter) DoStop() {
+	s.doStop()
+}
+
+func (s *Scatter) DoClean() {
 	s.doStop()
 }
 
@@ -174,4 +200,15 @@ func (s *Scatter) RipUp(instrs []string, req *coap.Message, from net.Addr) {
 
 	// fin
 	pushToOutch(resp, from, s.oCh)
+}
+
+type ScatterLive struct {
+	*Scatter
+}
+
+func (s *ScatterLive) DoStop() {
+	//
+	if s.Scatter.isDebug {
+		log.Printf("no i do not stop")
+	}
 }

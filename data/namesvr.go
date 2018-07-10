@@ -50,6 +50,15 @@ func (n *NameSvr) NameForID(v int) (string, error) {
 	return rv, nil
 }
 
+func (n *NameSvr) QueryIdForName(name string) (int, error) {
+	for k, v := range n.nameMap {
+		if v == name {
+			return k, nil
+		}
+	}
+	return 0, noSuchName
+}
+
 func (n *NameSvr) IdForName(name string) (int, error) {
 	for k, v := range n.nameMap {
 		if v == name {

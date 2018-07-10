@@ -10,6 +10,14 @@ import (
 	"github.com/eminom/go-coap"
 )
 
+const (
+	SpecialDirName = "<?>"
+)
+
+func IsSpecialDirName(name string) bool {
+	return name == SpecialDirName
+}
+
 type ServeMan struct {
 	ansCh chan<- *WorkItem
 	// scatterMap map[string]*Scatter
@@ -61,10 +69,19 @@ func (sm *ServeMan) ProcessPost(req coap.Message, from net.Addr) {
 			}
 
 		case "rd":
-			if !comm.IsFileExists(string(req.Payload)) {
+			reqFileName := string(req.Payload)
+			if IsSpecialDirName(reqFileName) {
+				resp.Code = coap.Created
+				if thisID, ok := sm.findScatter(reqFileName); ok {
+					resp.Payload = []byte(fmt.Sprintf("%02x", thisID))
+				} else {
+					resp.Type = coap.Reset //or error
+					resp.Payload = []byte(fmt.Sprintf("no such query"))
+				}
+			} else if !comm.IsFileExists(reqFileName) {
 				resp.Type = coap.Reset
 				resp.Payload = []byte(fmt.Sprintf("no such file: %v", string(req.Payload)))
-			} else if thisID, ok := sm.makeScatter(string(req.Payload)); ok {
+			} else if thisID, ok := sm.makeScatter(reqFileName); ok {
 				resp.Code = coap.Created
 				resp.Payload = []byte(fmt.Sprintf("%02x", thisID))
 			}

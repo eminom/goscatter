@@ -8,21 +8,23 @@ import (
 
 type scatterMan struct {
 	smLock     *sync.RWMutex
-	scatterMap map[string]*Scatter
+	scatterMap map[string]IScatter
 	smNameSvr  *NameSvr
 	smoCh      chan<- *WorkItem
 }
 
 func newScatterMan(outCh chan<- *WorkItem) *scatterMan {
-	return &scatterMan{
+	rv := &scatterMan{
 		smLock:     new(sync.RWMutex),
-		scatterMap: make(map[string]*Scatter),
+		scatterMap: make(map[string]IScatter),
 		smNameSvr:  NewNameServer(),
 		smoCh:      outCh,
 	}
+	rv.makeScatter(SpecialDirName)
+	return rv
 }
 
-func (sm *scatterMan) getScatterForID(shortname string) (rv *Scatter) {
+func (sm *scatterMan) getScatterForID(shortname string) (rv IScatter) {
 	sm.smLock.RLock()
 	if id, err := strconv.ParseInt(shortname, 16, 64); nil == err {
 		if name, err := sm.smNameSvr.NameForID(int(id)); nil == err {
@@ -58,6 +60,16 @@ func (sm *scatterMan) makeScatter(name string) (int, bool) {
 		sm.finalizeScatter(name)
 	})
 	return newID, true
+}
+
+func (sm *scatterMan) findScatter(name string) (int, bool) {
+	sm.smLock.RLock()
+	defer sm.smLock.RUnlock()
+	if _, ok := sm.scatterMap[name]; !ok {
+		return 0, false
+	}
+	v, err := sm.smNameSvr.QueryIdForName(name)
+	return v, nil == err
 }
 
 func (sm *scatterMan) finalizeScatter(name string) {
