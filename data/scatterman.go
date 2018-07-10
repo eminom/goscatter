@@ -83,3 +83,15 @@ func (sm *scatterMan) finalizeScatter(name string) {
 	delete(sm.scatterMap, name)
 	sm.smLock.Unlock()
 }
+
+func (sm *scatterMan) shutdownScatterMan() {
+	var ms []IClean
+	sm.smLock.Lock()
+	for _, v := range sm.scatterMap {
+		ms = append(ms, v)
+	}
+	sm.smLock.Unlock()
+	for _, v := range ms {
+		v.DoClean()
+	}
+}

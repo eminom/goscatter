@@ -123,6 +123,10 @@ func (c *Composer) DoFinish() bool {
 	return false
 }
 
+func (c *Composer) DoClean() {
+	c.doStop()
+}
+
 func (c *Composer) GetName() string {
 	return c.name
 }

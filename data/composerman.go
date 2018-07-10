@@ -67,3 +67,15 @@ func (cm *composerMan) finalizeComposer(name string) {
 	delete(cm.compoMap, name)
 	cm.composerLock.Unlock()
 }
+
+func (cm *composerMan) shutdownComposerMan() {
+	var ms []IClean
+	cm.composerLock.Lock()
+	for _, v := range cm.compoMap {
+		ms = append(ms, v)
+	}
+	cm.composerLock.Unlock()
+	for _, v := range ms {
+		v.DoClean()
+	}
+}

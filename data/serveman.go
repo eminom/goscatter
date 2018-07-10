@@ -39,6 +39,11 @@ func NewServeMan(ansCh chan<- *WorkItem) *ServeMan {
 	return rv
 }
 
+func (sm *ServeMan) Close() {
+	sm.shutdownComposerMan()
+	sm.shutdownScatterMan()
+}
+
 func (sm *ServeMan) ProcessPost(req coap.Message, from net.Addr) {
 	resp := &coap.Message{
 		Code:      coap.BadRequest,

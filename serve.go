@@ -68,6 +68,7 @@ func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, doneCh <-c
 	}
 
 	sMan := data.NewServeMan(workCh)
+	defer sMan.Close()
 
 	// write-procedure. one by one.
 	wg.Add(1)

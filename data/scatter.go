@@ -28,6 +28,7 @@ type WorkItem struct {
 }
 
 type IScatter interface {
+	IClean
 	RipUp(instrs []string, req *coap.Message, from net.Addr)
 	DoStop()
 }
