@@ -30,6 +30,16 @@ func (FileOpComm) SaveToFile(name string, pieces [][]byte) bool {
 	return true
 }
 
+// verify content directly.
+func (FileOpComm) VerifyChunk(pieces [][]byte, hash []byte) bool {
+	hmac := sha256.New()
+	for _, p := range pieces {
+		hmac.Write(p)
+	}
+	outH := hmac.Sum(nil)
+	return bytes.Compare(outH, hash) == 0
+}
+
 func (FileOpComm) VerifyFile(name string, hash []byte) bool {
 	hmac := sha256.New()
 	fin, err := os.Open(name)

@@ -22,6 +22,7 @@ import (
 
 var (
 	fVerbose = flag.Bool("v", false, "verbose for sacar")
+	fSubpath = flag.Bool("r", false, "store to its sub path")
 )
 
 const (
@@ -63,23 +64,41 @@ func (c *Collector) StartCollect(fileShortID int, whenDone func(), verbose bool)
 	}
 
 	doSaveToDisk := func() {
-		saveTo := filepath.Base(c.filename)
-
-		tmpName := saveTo + ".tmp"
-		if c.SaveToFile(tmpName, chunkArr) && c.VerifyFile(tmpName, c.hmac256) && nil == os.Rename(tmpName, saveTo) {
-			// log.Printf("hashed verified")
-			var totLength int64 = 0
-			for _, dat := range chunkArr {
-				totLength += int64(len(dat))
+		if data.IsSpecialDirName(c.filename) {
+			if !c.VerifyChunk(chunkArr, c.hmac256) {
+				log.Printf("list dir error: hash failed")
+			} else {
+				for _, c := range chunkArr {
+					os.Stdout.Write(c)
+				}
 			}
-			// log.Printf("saved.")
-			elapsed := time.Now().Sub(c.timeStarted)
-			bandwidth := float64(totLength) / elapsed.Seconds() / 1024
-			log.Printf("%.2f kbps", bandwidth)
 		} else {
-			log.Printf("error hmac of SHA256")
-			log.Printf("expecting: %v", hex.EncodeToString(c.hmac256))
+			var saveTo string
+			if *fSubpath {
+				saveTo = c.filename
+				os.MkdirAll(filepath.Dir(saveTo), os.ModePerm)
+			} else {
+				// base name is good enough
+				saveTo = filepath.Base(c.filename)
+			}
+			tmpName := saveTo + ".tmp"
+			if c.SaveToFile(tmpName, chunkArr) && c.VerifyFile(tmpName, c.hmac256) && nil == os.Rename(tmpName, saveTo) {
+				// log.Printf("hashed verified")
+				var totLength int64 = 0
+				for _, dat := range chunkArr {
+					totLength += int64(len(dat))
+				}
+				// log.Printf("saved.")
+				elapsed := time.Now().Sub(c.timeStarted)
+				bandwidth := float64(totLength) / elapsed.Seconds() / 1024
+				log.Printf("%.2f kbps", bandwidth)
+			} else {
+				log.Printf("error hmac of SHA256")
+				log.Printf("expecting: %v", hex.EncodeToString(c.hmac256))
+			}
 		}
+
+		// and finally.
 		whenDone()
 	}
 
