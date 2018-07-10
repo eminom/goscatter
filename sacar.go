@@ -21,6 +21,10 @@ import (
 	"github.com/eminom/go-coap"
 )
 
+const (
+	ElMaxResend = 3
+)
+
 var (
 	fBind    = flag.String("bind", ":0", "local address")
 	fAddr    = flag.String("addr", "localhost:16666", "host address")
@@ -33,6 +37,7 @@ type MsgPack struct {
 	chunk    []byte
 	d        func(*coap.Message) bool
 	lastSent time.Time
+	reTry    int
 }
 
 func NewMsgPack(msg *coap.Message, d func(*coap.Message) bool) *MsgPack {
@@ -52,11 +57,22 @@ func init() {
 }
 
 // return: a channel that consumes replies.
-func makeSender(uSock *net.UDPConn,
-	wg *sync.WaitGroup, ctx context.Context) (func(*coap.Message, func(*coap.Message) bool), func(), chan<- *coap.Message) {
+func makeSender(
+	uSock *net.UDPConn,
+	wg *sync.WaitGroup,
+	doAbort func(),
+	doneCh <-chan struct{}) (func(*coap.Message, func(*coap.Message) bool),
+	func(),
+	chan<- *coap.Message) {
 
 	var lock = new(sync.Mutex)
 	var cond = sync.NewCond(lock)
+
+	doPreTrigger := func() {
+		lock.Lock()
+		cond.Signal()
+		lock.Unlock()
+	}
 
 	frags := make(map[string]*MsgPack)
 	msgCh := make(chan *coap.Message)
@@ -71,7 +87,7 @@ func makeSender(uSock *net.UDPConn,
 			}()
 			for {
 				select {
-				case <-ctx.Done():
+				case <-doneCh:
 					return
 
 				case resp := <-msgCh:
@@ -103,49 +119,46 @@ func makeSender(uSock *net.UDPConn,
 		}()
 		for batchOut := 0; ; batchOut++ {
 			select {
-			case <-ctx.Done():
+			case <-doneCh:
 				return
 			default:
 			}
 			lock.Lock()
 			if len(frags) == 0 {
-				// log.Printf("wait 1")
 				cond.Wait()
-				// log.Printf("wait 1 a")
 			}
 			now := time.Now()
 			// log.Printf("write iteration 1: %v", batchOut)
 			for _, v := range frags {
 				latest := v.lastSent.Add(5 * time.Second)
 				if now.After(latest) {
-					v.lastSent = now
-					// log.Printf("out: %v", co.GetMsgSig(v.msg))
-					uSock.Write(v.chunk)
-				} else {
-					// log.Printf("not timeout yet")
+					if v.reTry < ElMaxResend {
+						v.reTry++
+						v.lastSent = time.Now()
+						// log.Printf("out: %v", co.GetMsgSig(v.msg))
+						uSock.Write(v.chunk)
+					} else {
+						log.Printf("timeout, aborted")
+						doAbort()
+						break
+					}
 				}
 			}
-			// log.Printf("write iteration 1a")
 			lock.Unlock()
 		}
 	}()
 
-	return func(req *coap.Message, dealer func(*coap.Message) bool) {
-			// log.Printf("send 1")
-			lock.Lock()
-			serialid := co.GetMsgSig(req)
-			if _, ok := frags[serialid]; !ok {
-				frags[serialid] = NewMsgPack(req, dealer)
-				cond.Signal() // incoming task
-			}
-			lock.Unlock()
-			// log.Printf("send 1 a")
-		}, func() {
-			// log.Printf("triggers")
-			lock.Lock()
+	elSend := func(req *coap.Message, dealer func(*coap.Message) bool) {
+		lock.Lock()
+		serialid := co.GetMsgSig(req)
+		if _, ok := frags[serialid]; !ok {
+			frags[serialid] = NewMsgPack(req, dealer)
 			cond.Signal()
-			lock.Unlock()
-		}, msgCh
+		}
+		lock.Unlock()
+	}
+
+	return elSend, doPreTrigger, msgCh
 }
 
 func main() {
@@ -173,7 +186,12 @@ func masterEnt() {
 
 	var wg sync.WaitGroup
 	ctx, doCancel0 := context.WithCancel(context.Background())
-	sender, doPreTrigger, respCh := makeSender(sock, &wg, ctx)
+	sender, doPreTrigger, respCh := makeSender(
+		sock,
+		&wg,
+		func() { doCancel0() },
+		ctx.Done(),
+	)
 	doCancel := context.CancelFunc(func() {
 		doCancel0()
 		doPreTrigger()
