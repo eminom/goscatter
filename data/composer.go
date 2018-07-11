@@ -124,6 +124,7 @@ func (c *Composer) DoFinish() bool {
 }
 
 func (c *Composer) DoClean() {
+	log.Printf("composer<%v> is cleanin up", c.name)
 	c.doStop()
 }
 

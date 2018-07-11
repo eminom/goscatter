@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/eminom/go-coap"
@@ -29,8 +30,10 @@ type WorkItem struct {
 
 type IScatter interface {
 	IClean
+	IRefCount
 	RipUp(instrs []string, req *coap.Message, from net.Addr)
 	DoStop()
+	GetID() int
 }
 
 type Scatter struct {
@@ -41,7 +44,9 @@ type Scatter struct {
 
 	doStop func()
 
-	isDebug bool
+	isDebug  bool
+	scaID    int
+	refCount int32
 
 	heartBeatCh chan<- struct{}
 }
@@ -73,7 +78,30 @@ func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize fu
 		}
 	}
 
+	//
 	hbChan := make(chan struct{}, 1)
+	rv := &Scatter{
+		isDebug:  fDebugDups, //
+		Fragger:  NewFragger(inpath),
+		oCh:      ch,
+		markChWR: markCh,
+		scaID:    shortid,
+		refCount: 1,
+		doStop: func() {
+			stopFunc()
+			dups := <-resCh
+			alls := <-resCh
+			if fDebugDups {
+				log.Printf("info for %v", inpath)
+				log.Printf("dups count: %v", dups)
+				log.Printf("%v in all.", alls)
+			}
+			log.Printf("%v(%v) halt *****", inpath, shortid)
+			wg.Wait()
+		},
+		heartBeatCh: hbChan,
+	}
+
 	// Now go
 	wg.Add(1)
 	go func() {
@@ -99,32 +127,14 @@ func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize fu
 					dupsCount++
 				}
 			case <-time.After(timeoutDuration):
-				return
+				if rv.Release() {
+					return
+				}
 				//TODO: make this 15 parameterized.
 			case <-hbChan:
 			}
 		}
 	}()
-
-	rv := &Scatter{
-		isDebug:  fDebugDups, //
-		Fragger:  NewFragger(inpath),
-		oCh:      ch,
-		markChWR: markCh,
-		doStop: func() {
-			stopFunc()
-			dups := <-resCh
-			alls := <-resCh
-			if fDebugDups {
-				log.Printf("info for %v", inpath)
-				log.Printf("dups count: %v", dups)
-				log.Printf("%v in all.", alls)
-			}
-			log.Printf("%v(%v) halt *****", inpath, shortid)
-			wg.Wait()
-		},
-		heartBeatCh: hbChan,
-	}
 
 	if IsSpecialDirName(inpath) {
 		return &ScatterLive{
@@ -134,12 +144,29 @@ func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize fu
 	return rv
 }
 
+func (s *Scatter) GetID() int {
+	return s.scaID
+}
+
+// true for ready to release.
+func (s *Scatter) Release() bool {
+	v := atomic.AddInt32(&s.refCount, -1)
+	return 0 == v
+}
+
+func (s *Scatter) AddRef() {
+	atomic.AddInt32(&s.refCount, 1)
+}
+
 // Technically, it can be called for only once.
 func (s *Scatter) DoStop() {
-	s.doStop()
+	if s.Release() {
+		s.doStop()
+	}
 }
 
 func (s *Scatter) DoClean() {
+	log.Printf("scatter<%v> cleaning up ...", s.originalName)
 	s.doStop()
 }
 

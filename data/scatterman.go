@@ -46,10 +46,13 @@ func (sm *scatterMan) makeScatter(name string) (int, bool) {
 
 	// If there are more than one user to request for the same file at the same time
 	// There will be some problems.
-	if _, ok := sm.scatterMap[name]; ok {
-		// Already exist !
-		log.Printf("already exist. you may check it out")
-		return 0, false
+	if scatter, ok := sm.scatterMap[name]; ok {
+		// // Already exist !
+		// log.Printf("already exist. you may check it out")
+		// return 0, false
+		scatter.AddRef()
+		id := scatter.GetID()
+		return id, true
 	}
 	newID, err := sm.smNameSvr.IdForName(name)
 	if err != nil {
