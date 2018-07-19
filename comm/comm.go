@@ -8,9 +8,9 @@ type ExitCode int
 
 const (
 	ExitCode_Success      ExitCode = 0
-	ExitCode_ReqTimeout            = 1
-	ExitCode_NoSuchFile            = 2
-	ExitCode_GeneralError          = 127
+	ExitCode_GeneralError          = 1
+	ExitCode_ReqTimeout            = 2
+	ExitCode_NoSuchFile            = 3
 )
 
 var (
