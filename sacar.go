@@ -139,6 +139,7 @@ func makeSender(
 						uSock.Write(v.chunk)
 					} else {
 						log.Printf("timeout, aborted")
+						comm.SetExitCode(comm.ExitCode_ReqTimeout)
 						doAbort()
 						break
 					}

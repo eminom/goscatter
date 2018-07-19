@@ -4,8 +4,17 @@ import (
 	"os"
 )
 
+type ExitCode int
+
+const (
+	ExitCode_Success      ExitCode = 0
+	ExitCode_ReqTimeout            = 1
+	ExitCode_NoSuchFile            = 2
+	ExitCode_GeneralError          = 127
+)
+
 var (
-	exitCode = 127 // Error for default.
+	exitCode ExitCode = ExitCode_GeneralError
 )
 
 func IsFileExists(inpath string) bool {
@@ -14,9 +23,9 @@ func IsFileExists(inpath string) bool {
 }
 
 func QuitProgram() {
-	os.Exit(exitCode)
+	os.Exit(int(exitCode))
 }
 
-func SetExitCode(ec int) {
+func SetExitCode(ec ExitCode) {
 	exitCode = ec
 }

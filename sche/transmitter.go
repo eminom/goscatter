@@ -99,7 +99,7 @@ func MakeTransmitterWork(proc Sche, inpath string, winSize int,
 			sender(req, func(resp *coap.Message) bool {
 				if resp.Code == coap.Changed {
 					log.Printf("fin ok")
-					comm.SetExitCode(0) // mark it as successful.
+					comm.SetExitCode(comm.ExitCode_Success) // mark it as successful.
 				} else {
 					log.Printf("server fin failed")
 				}

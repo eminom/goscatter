@@ -19,7 +19,6 @@ import (
 
 func main() {
 	var fAddr = flag.String("addr", ":16666", "address for listening")
-	var fContent = flag.String("target", "tmp/bin.7z", "zip")
 	flag.Parse()
 	log.SetFlags(log.Lshortfile | log.Ltime)
 
@@ -30,7 +29,7 @@ func main() {
 
 	ctx, doCancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	startScatter(addr, *fContent, &wg, ctx.Done())
+	startScatter(addr, &wg, ctx.Done())
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Kill, os.Interrupt, syscall.SIGTERM)
@@ -45,12 +44,12 @@ func main() {
 	log.Printf("bye")
 }
 
-func startScatter(addr *net.UDPAddr, inputpath string, wg *sync.WaitGroup, doneCh <-chan struct{}) {
+func startScatter(addr *net.UDPAddr, wg *sync.WaitGroup, doneCh <-chan struct{}) {
 	wg.Add(1)
-	go runScatter(addr, inputpath, wg, doneCh)
+	go runScatter(addr, wg, doneCh)
 }
 
-func runScatter(addr *net.UDPAddr, inpath string, wg *sync.WaitGroup, doneCh <-chan struct{}) {
+func runScatter(addr *net.UDPAddr, wg *sync.WaitGroup, doneCh <-chan struct{}) {
 	defer func() {
 		log.Printf("leaving scat-ter process")
 		wg.Done()

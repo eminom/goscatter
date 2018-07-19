@@ -172,6 +172,7 @@ func MakeSacarWork(proc Sche, filename string,
 				}
 				log.Printf("rd failed for<%v>:%v", resp.Code, string(resp.Payload))
 				doFinish() // fail and quit.
+				comm.SetExitCode(comm.ExitCode_NoSuchFile)
 				return true
 			})
 		},
@@ -209,7 +210,7 @@ func MakeSacarWork(proc Sche, filename string,
 			sender(req, func(resp *coap.Message) bool {
 				if coap.Acknowledgement == resp.Type && resp.Code == coap.Changed {
 					log.Printf("server side finish ok")
-					comm.SetExitCode(0)
+					comm.SetExitCode(comm.ExitCode_Success)
 				} else {
 					log.Printf("server side finish error:%v - %v", resp.Type, resp.Code)
 				}
