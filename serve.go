@@ -19,8 +19,16 @@ import (
 
 func main() {
 	var fAddr = flag.String("addr", ":16666", "address for listening")
+	var fMainDir = flag.String("dir", "", "working directory")
 	flag.Parse()
 	log.SetFlags(log.Lshortfile | log.Ltime)
+
+	if *fMainDir != "" {
+		err := os.Chdir(*fMainDir)
+		if err != nil {
+			log.Fatalf("error: %v", err)
+		}
+	}
 
 	addr, err := net.ResolveUDPAddr("udp", *fAddr)
 	if err != nil {
