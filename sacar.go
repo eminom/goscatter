@@ -14,15 +14,11 @@ import (
 	"syscall"
 	"time"
 
-	co "./coaputils"
 	"./comm"
 	"./sche"
+	"./sender"
 
 	"github.com/eminom/go-coap"
-)
-
-const (
-	ElMaxResend = 3
 )
 
 var (
@@ -32,136 +28,8 @@ var (
 	fUpload  = flag.String("u", "", "upload file path")
 )
 
-type MsgPack struct {
-	msg      *coap.Message
-	chunk    []byte
-	d        func(*coap.Message) bool
-	lastSent time.Time
-	reTry    int
-}
-
-func NewMsgPack(msg *coap.Message, d func(*coap.Message) bool) *MsgPack {
-	chunk, err := msg.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-	return &MsgPack{
-		msg:   msg,
-		chunk: chunk,
-		d:     d,
-	}
-}
-
 func init() {
 	flag.Parse()
-}
-
-// return: a channel that consumes replies.
-func makeSender(
-	uSock *net.UDPConn,
-	wg *sync.WaitGroup,
-	doAbort func(),
-	doneCh <-chan struct{}) (func(*coap.Message, func(*coap.Message) bool),
-	func(),
-	chan<- *coap.Message) {
-
-	var lock = new(sync.Mutex)
-	var cond = sync.NewCond(lock)
-
-	doPreTrigger := func() {
-		lock.Lock()
-		cond.Signal()
-		lock.Unlock()
-	}
-
-	frags := make(map[string]*MsgPack)
-	msgCh := make(chan *coap.Message)
-	// It was strange that, the buffer size is 0 perform the best !
-
-	for b := 0; b < 1; b++ {
-		wg.Add(1)
-		go func(workid int) {
-			defer func() {
-				//log.Printf("leavin callback-relay-proc(%v)", workid)
-				wg.Done()
-			}()
-			for {
-				select {
-				case <-doneCh:
-					return
-
-				case resp := <-msgCh:
-					// log.Printf("resp 1")
-					str := co.GetMsgSig(resp)
-					lock.Lock()
-					if d, ok := frags[str]; ok {
-						lock.Unlock()
-						if d.d(resp) {
-							lock.Lock()
-							// log.Printf("one old is removed")
-							delete(frags, str)
-							lock.Unlock()
-						} else {
-							log.Printf("rejected: %v", resp)
-						}
-					} else {
-						lock.Unlock()
-					}
-					// log.Printf("resp 1a")
-				}
-			}
-		}(b)
-	}
-
-	wg.Add(1)
-	go func() {
-		defer func() {
-			// log.Printf("leavin batch-proc")
-			wg.Done()
-		}()
-		for batchOut := 0; ; batchOut++ {
-			select {
-			case <-doneCh:
-				return
-			default:
-			}
-			lock.Lock()
-			if len(frags) == 0 {
-				cond.Wait()
-			}
-			now := time.Now()
-			// log.Printf("write iteration 1: %v", batchOut)
-			for _, v := range frags {
-				latest := v.lastSent.Add(5 * time.Second)
-				if now.After(latest) {
-					if v.reTry < ElMaxResend {
-						v.reTry++
-						v.lastSent = time.Now()
-						// log.Printf("out: %v", co.GetMsgSig(v.msg))
-						uSock.Write(v.chunk)
-					} else {
-						log.Printf("timeout, aborted")
-						comm.SetExitCode(comm.ExitCode_ReqTimeout)
-						doAbort()
-						break
-					}
-				}
-			}
-			lock.Unlock()
-		}
-	}()
-
-	elSend := func(req *coap.Message, dealer func(*coap.Message) bool) {
-		lock.Lock()
-		serialid := co.GetMsgSig(req)
-		if _, ok := frags[serialid]; !ok {
-			frags[serialid] = NewMsgPack(req, dealer)
-			cond.Signal()
-		}
-		lock.Unlock()
-	}
-
-	return elSend, doPreTrigger, msgCh
 }
 
 func main() {
@@ -190,7 +58,7 @@ func masterEnt() {
 
 	var wg sync.WaitGroup
 	ctx, doCancel0 := context.WithCancel(context.Background())
-	sender, doPreTrigger, respCh := makeSender(
+	sender := sender.NewLockSender(
 		sock,
 		&wg,
 		func() { doCancel0() },
@@ -198,10 +66,10 @@ func masterEnt() {
 	)
 	doCancel := context.CancelFunc(func() {
 		doCancel0()
-		doPreTrigger()
+		sender.DoPreTrigger()
 		// log.Printf("cancelling ...")
 	})
-	startRecvProc(sock, respCh, &wg, doCancel, ctx)
+	startRecvProc(sock, sender.GetMessageChan(), &wg, doCancel, ctx)
 
 	sProc := sche.NewScheProc()
 	if *fUpload != "" {
@@ -209,12 +77,12 @@ func masterEnt() {
 			log.Fatalf("upload path error: %v", *fUpload)
 		}
 		sProc.StartWorkSeq(&wg, ctx.Done(), sche.MakeTransmitterWork(
-			sProc, *fUpload, *fWinSize, sender,
+			sProc, *fUpload, *fWinSize, sender.SendMessage,
 			func() { doCancel() },
 		))
 	} else if len(flag.Args()) > 0 {
 		sProc.StartWorkSeq(&wg, ctx.Done(), sche.MakeSacarWork(
-			sProc, flag.Args()[0], *fWinSize, sender,
+			sProc, flag.Args()[0], *fWinSize, sender.SendMessage,
 			func() { doCancel() }),
 		)
 	} else {
@@ -266,7 +134,8 @@ func startRecvProc(sock net.Conn, respCh chan<- *coap.Message, wg *sync.WaitGrou
 			// log.Printf("new msg in: %v", data.GetMsgSig(&msg))
 			select {
 			case respCh <- &msg: // OK. GO ON.
-			case <-time.After(10 * time.Second):
+			case <-ctx.Done():
+				// case <-time.After(10 * time.Second):
 				// log.Printf("emmm.... taking too long")
 			}
 		}

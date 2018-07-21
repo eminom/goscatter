@@ -56,6 +56,18 @@ func NewCollector(segCount int, filename string, hmac256 []byte,
 	}
 }
 
+func (c *Collector) showStatus(chunks [][]byte) {
+	var totLength int64 = 0
+	for _, dat := range chunks {
+		totLength += int64(len(dat))
+	}
+	// log.Printf("saved.")
+	elapsed := time.Now().Sub(c.timeStarted)
+	bandwidth := float64(totLength) / elapsed.Seconds() / 1024
+	log.Printf("%v elapsed", elapsed)
+	log.Printf("%.2f kbps", bandwidth)
+}
+
 func (c *Collector) StartCollect(fileShortID int, whenDone func(), verbose bool) {
 	sender := c.sender
 
@@ -69,6 +81,7 @@ func (c *Collector) StartCollect(fileShortID int, whenDone func(), verbose bool)
 			if !c.VerifyChunk(chunkArr, c.hmac256) {
 				log.Printf("list dir error: hash failed")
 			} else {
+				c.showStatus(chunkArr)
 				for _, c := range chunkArr {
 					os.Stdout.Write(c)
 				}
@@ -90,15 +103,7 @@ func (c *Collector) StartCollect(fileShortID int, whenDone func(), verbose bool)
 			tmpName := saveTo + ".tmp"
 			if c.SaveToFile(tmpName, chunkArr) && c.VerifyFile(tmpName, c.hmac256) && nil == os.Rename(tmpName, saveTo) {
 				// log.Printf("hashed verified")
-				var totLength int64 = 0
-				for _, dat := range chunkArr {
-					totLength += int64(len(dat))
-				}
-				// log.Printf("saved.")
-				elapsed := time.Now().Sub(c.timeStarted)
-				bandwidth := float64(totLength) / elapsed.Seconds() / 1024
-				log.Printf("%v elapsed", elapsed)
-				log.Printf("%.2f kbps", bandwidth)
+				c.showStatus(chunkArr)
 			} else {
 				log.Printf("error hmac of SHA256")
 				log.Printf("expecting: %v", hex.EncodeToString(c.hmac256))
