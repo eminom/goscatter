@@ -32,7 +32,7 @@ func NewLockSender(uSock *net.UDPConn, wg *sync.WaitGroup, doAbort func(), doneC
 	}
 
 	frags := make(map[string]*elMessagePacket)
-	msgCh := make(chan *coap.Message)
+	msgCh := make(chan *coap.Message, 16)
 	// It was strange that, the buffer size is 0 perform the best !
 
 	for b := 0; b < 1; b++ {

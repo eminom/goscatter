@@ -24,7 +24,7 @@ import (
 var (
 	fBind    = flag.String("bind", ":0", "local address")
 	fAddr    = flag.String("addr", "localhost:16666", "host address")
-	fWinSize = flag.Int("s", 32, "window size for batching")
+	fWinSize = flag.Int("s", 16, "window size for batching")
 	fUpload  = flag.String("u", "", "upload file path")
 )
 
@@ -58,12 +58,21 @@ func masterEnt() {
 
 	var wg sync.WaitGroup
 	ctx, doCancel0 := context.WithCancel(context.Background())
-	sender := sender.NewLockSender(
+	// sender := sender.NewLockSender(
+	// 	sock,
+	// 	&wg,
+	// 	func() { doCancel0() },
+	// 	ctx.Done(),
+	// )
+
+	sender := sender.NewFreeSender(
 		sock,
+		*fWinSize,
 		&wg,
 		func() { doCancel0() },
 		ctx.Done(),
 	)
+
 	doCancel := context.CancelFunc(func() {
 		doCancel0()
 		sender.DoPreTrigger()

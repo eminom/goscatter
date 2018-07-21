@@ -1,6 +1,7 @@
 package sender
 
 import (
+	"net"
 	"time"
 
 	"github.com/eminom/go-coap"
@@ -34,4 +35,10 @@ func newMsgPack(msg *coap.Message, d func(*coap.Message) bool) *elMessagePacket 
 		chunk: chunk,
 		d:     d,
 	}
+}
+
+func (e *elMessagePacket) hacerSend(sock *net.UDPConn) {
+	e.reTry++
+	e.lastSent = time.Now()
+	sock.Write(e.chunk)
 }
