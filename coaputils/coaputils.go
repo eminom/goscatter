@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	msgIDer = NewMsgIDGen()
+	msgIDer = NewMsgIDGenv1()
 )
 
 func GetMsgSig(msg *coap.Message) string {
