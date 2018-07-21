@@ -23,6 +23,7 @@ import (
 var (
 	fVerbose = flag.Bool("v", false, "verbose for sacar")
 	fSubpath = flag.Bool("r", false, "store to its sub path")
+	fOutpath = flag.String("o", "", "directory prefix")
 )
 
 const (
@@ -75,12 +76,17 @@ func (c *Collector) StartCollect(fileShortID int, whenDone func(), verbose bool)
 		} else {
 			var saveTo string
 			if *fSubpath {
+				// use original relative path
 				saveTo = c.filename
-				os.MkdirAll(filepath.Dir(saveTo), os.ModePerm)
 			} else {
 				// base name is good enough
 				saveTo = filepath.Base(c.filename)
 			}
+
+			// empty path will be ignore.
+			saveTo = filepath.Join(*fOutpath, saveTo)
+			os.MkdirAll(filepath.Dir(saveTo), os.ModePerm)
+
 			tmpName := saveTo + ".tmp"
 			if c.SaveToFile(tmpName, chunkArr) && c.VerifyFile(tmpName, c.hmac256) && nil == os.Rename(tmpName, saveTo) {
 				// log.Printf("hashed verified")
@@ -91,6 +97,7 @@ func (c *Collector) StartCollect(fileShortID int, whenDone func(), verbose bool)
 				// log.Printf("saved.")
 				elapsed := time.Now().Sub(c.timeStarted)
 				bandwidth := float64(totLength) / elapsed.Seconds() / 1024
+				log.Printf("%v elapsed", elapsed)
 				log.Printf("%.2f kbps", bandwidth)
 			} else {
 				log.Printf("error hmac of SHA256")
@@ -206,6 +213,7 @@ func MakeSacarWork(proc Sche, filename string,
 			})
 		},
 		3: func() {
+			log.Printf("sending done to server ...")
 			req := co.NewPostReqf("/done/%v", shortID)
 			sender(req, func(resp *coap.Message) bool {
 				if coap.Acknowledgement == resp.Type && resp.Code == coap.Changed {

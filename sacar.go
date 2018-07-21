@@ -101,6 +101,8 @@ func makeSender(
 							// log.Printf("one old is removed")
 							delete(frags, str)
 							lock.Unlock()
+						} else {
+							log.Printf("rejected: %v", resp)
 						}
 					} else {
 						lock.Unlock()
@@ -166,6 +168,7 @@ func main() {
 	defer func() {
 		comm.QuitProgram()
 	}()
+	log.SetFlags(log.Lmicroseconds)
 	masterEnt()
 }
 
