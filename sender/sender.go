@@ -13,8 +13,7 @@ const (
 
 type Sender interface {
 	SendMessage(*coap.Message, func(*coap.Message) bool)
-	DoPreTrigger()
-	GetMessageChan() chan<- *coap.Message
+	TriggerClose()
 }
 
 type elMessagePacket struct {

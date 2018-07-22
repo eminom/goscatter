@@ -19,17 +19,19 @@ type lockSender struct {
 }
 
 func NewLockSender(uSock *net.UDPConn, wg *sync.WaitGroup, doAbort func(), doneCh <-chan struct{}) Sender {
+	rv := newLockSender(uSock, wg, doAbort, doneCh)
+	startRecvProc(uSock, rv.msgCh, wg, doAbort, doneCh)
+	return rv
+}
+
+func newLockSender(uSock *net.UDPConn, wg *sync.WaitGroup, doAbort func(), doneCh <-chan struct{}) *lockSender {
 
 	rv := &lockSender{}
 
 	var lock = new(sync.Mutex)
 	var cond = sync.NewCond(lock)
 
-	rv.doPreTrigger = func() {
-		lock.Lock()
-		cond.Signal()
-		lock.Unlock()
-	}
+	rv.doPreTrigger = cond.Signal
 
 	frags := make(map[string]*elMessagePacket)
 	msgCh := make(chan *coap.Message, 16)
@@ -123,16 +125,11 @@ func NewLockSender(uSock *net.UDPConn, wg *sync.WaitGroup, doAbort func(), doneC
 	return rv
 }
 
-func (ls *lockSender) DoPreTrigger() {
+func (ls *lockSender) TriggerClose() {
 	ls.doPreTrigger()
 }
 
 //
 func (ls *lockSender) SendMessage(msg *coap.Message, callback func(*coap.Message) bool) {
 	ls.elSend(msg, callback)
-}
-
-// write-only channel
-func (ls *lockSender) GetMessageChan() chan<- *coap.Message {
-	return ls.msgCh
 }

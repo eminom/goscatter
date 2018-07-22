@@ -13,9 +13,8 @@ import (
 )
 
 type freeSender struct {
-	elSend       func(msg *coap.Message, callback func(*coap.Message) bool)
-	doPreTrigger func()
-	msgCh        chan<- *coap.Message
+	elSend func(msg *coap.Message, callback func(*coap.Message) bool)
+	msgCh  chan<- *coap.Message
 }
 
 type reqItem struct {
@@ -31,11 +30,14 @@ func biggerOne(a, b int) int {
 }
 
 func NewFreeSender(uSock *net.UDPConn, wsize int, wg *sync.WaitGroup, doAbort func(), doneCh <-chan struct{}) Sender {
+	rv := newFreeSender(uSock, wsize, wg, doAbort, doneCh)
+	startRecvProc(uSock, rv.msgCh, wg, doAbort, doneCh)
+	return rv
+}
+
+func newFreeSender(uSock *net.UDPConn, wsize int, wg *sync.WaitGroup, doAbort func(), doneCh <-chan struct{}) *freeSender {
 
 	rv := &freeSender{}
-
-	rv.doPreTrigger = func() {
-	}
 
 	msgCh := make(chan *coap.Message, wsize)
 	inMessageCh := make(chan *reqItem, biggerOne(1024, wsize)) //: bigger, the better
@@ -117,16 +119,9 @@ func NewFreeSender(uSock *net.UDPConn, wsize int, wg *sync.WaitGroup, doAbort fu
 	return rv
 }
 
-func (ls *freeSender) DoPreTrigger() {
-	ls.doPreTrigger()
-}
+func (ls *freeSender) TriggerClose() {}
 
 //
 func (ls *freeSender) SendMessage(msg *coap.Message, callback func(*coap.Message) bool) {
 	ls.elSend(msg, callback)
-}
-
-// write-only channel
-func (ls *freeSender) GetMessageChan() chan<- *coap.Message {
-	return ls.msgCh
 }
