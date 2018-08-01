@@ -172,6 +172,7 @@ func (s *Scatter) DoClean() {
 
 func (s *Scatter) RipUp(instrs []string, req *coap.Message, from net.Addr) {
 	var resp = &coap.Message{
+		Type:      coap.Acknowledgement,
 		Code:      coap.BadRequest,
 		MessageID: req.MessageID,
 		Token:     req.Token,
