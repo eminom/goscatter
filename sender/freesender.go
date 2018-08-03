@@ -69,10 +69,10 @@ func newFreeSender(uSock *net.UDPConn, wsize int, wg *sync.WaitGroup, doAbort fu
 					return
 
 				case resp := <-msgCh:
-					if resp.Type != coap.Acknowledgement {
-						log.Printf("unexpected type")
-						return
-					}
+					// if resp.Type != coap.Acknowledgement {
+					// 	log.Printf("unexpected type")
+					// 	return
+					// }
 					str := co.GetMsgSig(resp)
 					if d, ok := frags[str]; ok {
 						if d.d(resp) {
