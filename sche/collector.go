@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -30,6 +32,29 @@ const (
 	MinWinSize int32 = 1
 	MaxWinSize int32 = 1024
 )
+
+var (
+	reShortIDSegsize = regexp.MustCompile(`([A-Fa-f\d]+),\s*(\d+)`)
+)
+
+var (
+	invalidReFormat = errors.New("error format for short-id and segment-size")
+)
+
+func parseShortIDndSeg(str string) (shortID int, segSize int, err error) {
+	match := reShortIDSegsize.FindStringSubmatch(str)
+	if len(match) != 3 {
+		return 0, 0, invalidReFormat
+	}
+	var i64 int64
+	i64, err = strconv.ParseInt(match[1], 16, 32)
+	if err != nil {
+		return 0, 0, err
+	}
+	shortID = int(i64)
+	segSize, err = strconv.Atoi(match[2])
+	return
+}
 
 type Collector struct {
 	WindowSize int
@@ -163,18 +188,19 @@ func (c *Collector) StartCollect(fileShortID int, whenDone func(), verbose bool)
 }
 
 func MakeSacarWork(proc Sche, filename string,
-	winSize int, sender func(*coap.Message, func(*coap.Message) bool), doFinish func()) map[int]func() {
+	winSize int, fragmentSize int, sender func(*coap.Message, func(*coap.Message) bool), doFinish func()) map[int]func() {
 	var segs int
 	var shortID int
+	var thatSegsize int
 	return map[int]func(){
 		0: func() {
-			req := co.NewPostReqf("/rd/placeholder")
+			req := co.NewPostReqf("/rd/%v", fragmentSize)
 			log.Printf("requesting for %v", filename)
 			req.Payload = []byte(filename)
 			sender(req, func(resp *coap.Message) bool {
 				if coap.Acknowledgement == resp.Type && resp.Code == coap.Created {
 					var err error
-					shortID, err = strconv.Atoi(string(resp.Payload))
+					shortID, thatSegsize, err = parseShortIDndSeg(string(resp.Payload))
 					if err != nil {
 						panic(err)
 					}

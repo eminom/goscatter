@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
 
 	"../comm"
 
@@ -11,7 +12,9 @@ import (
 )
 
 const (
-	SpecialDirName = "<?>"
+	SpecialDirName     = "<?>"
+	DefaultSegmentSize = 512
+	MaxSegmentSize     = 64 * 1024
 )
 
 func IsSpecialDirName(name string) bool {
@@ -75,10 +78,16 @@ func (sm *ServeMan) ProcessPost(req coap.Message, from net.Addr) {
 
 		case "rd":
 			reqFileName := string(req.Payload)
+			var proposedSegmentSize int = DefaultSegmentSize
+			if sizeVal, err := strconv.Atoi(paths[1]); nil == err {
+				if 0 < sizeVal && sizeVal <= MaxSegmentSize {
+					proposedSegmentSize = sizeVal
+				}
+			}
 			if IsSpecialDirName(reqFileName) {
 				resp.Code = coap.Created
-				if thisID, ok := sm.findScatter(reqFileName); ok {
-					resp.Payload = []byte(fmt.Sprintf("%02x", thisID))
+				if thisID, thatSegSize, ok := sm.findScatter(reqFileName); ok {
+					resp.Payload = []byte(fmt.Sprintf("%02x,%v", thisID, thatSegSize))
 				} else {
 					resp.Type = coap.Reset //or error
 					resp.Payload = []byte(fmt.Sprintf("no such query"))
@@ -86,9 +95,9 @@ func (sm *ServeMan) ProcessPost(req coap.Message, from net.Addr) {
 			} else if !comm.IsFileExists(reqFileName) {
 				resp.Type = coap.Reset
 				resp.Payload = []byte(fmt.Sprintf("no such file: %v", string(req.Payload)))
-			} else if thisID, ok := sm.makeScatter(reqFileName); ok {
+			} else if thisID, thatSegSize, ok := sm.makeScatter(proposedSegmentSize, reqFileName); ok {
 				resp.Code = coap.Created
-				resp.Payload = []byte(fmt.Sprintf("%02x", thisID))
+				resp.Payload = []byte(fmt.Sprintf("%02x,%v", thisID, thatSegSize))
 			}
 
 		case "done":

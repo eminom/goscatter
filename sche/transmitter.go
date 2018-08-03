@@ -17,11 +17,16 @@ var (
 	isHexString = regexp.MustCompile(`^[\dA-Fa-f]+$`)
 )
 
+//
+const (
+	DefaultTransmitterSegmentSize = 512
+)
+
 func MakeTransmitterWork(proc Sche, inpath string, winSize int,
 	sender func(*coap.Message, func(*coap.Message) bool),
 	doFinish func()) map[int]func() {
 
-	fragger := data.NewFragger(inpath)
+	fragger := data.NewFragger(DefaultTransmitterSegmentSize, inpath)
 	pieces := fragger.GetPieces()
 	lPiece := len(pieces)
 	trait := data.MakeComposerTrait(fragger.GetHash(), lPiece)

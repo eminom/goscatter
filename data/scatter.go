@@ -34,6 +34,7 @@ type IScatter interface {
 	RipUp(instrs []string, req *coap.Message, from net.Addr)
 	DoStop()
 	GetID() int
+	GetSegmentSize() int
 }
 
 type Scatter struct {
@@ -52,7 +53,7 @@ type Scatter struct {
 }
 
 // when-finalize: can be called only once.
-func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize func()) IScatter {
+func NewScatter(segmentsize int, inpath string, shortid int, ch chan<- *WorkItem, whenFinalize func()) IScatter {
 	markCh := make(chan string, 16)
 	runCtx, doStopAhora := context.WithCancel(context.Background())
 	resCh := make(chan int, 2)
@@ -82,7 +83,7 @@ func NewScatter(inpath string, shortid int, ch chan<- *WorkItem, whenFinalize fu
 	hbChan := make(chan struct{}, 1)
 	rv := &Scatter{
 		isDebug:  fDebugDups, //
-		Fragger:  NewFragger(inpath),
+		Fragger:  NewFragger(segmentsize, inpath),
 		oCh:      ch,
 		markChWR: markCh,
 		scaID:    shortid,

@@ -5,6 +5,6 @@ import (
 )
 
 func TestFraggerLoad(t *testing.T) {
-	NewFragger("fragger.go")
+	NewFragger(3, "fragger.go")
 	t.Logf("done")
 }

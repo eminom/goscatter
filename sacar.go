@@ -18,11 +18,12 @@ import (
 )
 
 var (
-	fBind    = flag.String("bind", ":0", "local address")
-	fAddr    = flag.String("addr", "localhost:16666", "host address")
-	fWinSize = flag.Int("s", 16, "window size for batching")
-	fUpload  = flag.String("u", "", "upload file path")
-	fAlgo    = flag.String("a", "", "algorithm")
+	fBind     = flag.String("bind", ":0", "local address")
+	fAddr     = flag.String("addr", "localhost:16666", "host address")
+	fWinSize  = flag.Int("s", 16, "window size for batching")
+	fUpload   = flag.String("u", "", "upload file path")
+	fAlgo     = flag.String("a", "", "algorithm")
+	fFragsize = flag.Int("f", 512, "fragment size")
 )
 
 func init() {
@@ -91,7 +92,7 @@ func masterEnt() {
 		))
 	} else if len(flag.Args()) > 0 {
 		sProc.StartWorkSeq(&wg, ctx.Done(), sche.MakeSacarWork(
-			sProc, flag.Args()[0], *fWinSize, snder.SendMessage,
+			sProc, flag.Args()[0], *fWinSize, *fFragsize, snder.SendMessage,
 			func() { doCancel() }),
 		)
 	} else {

@@ -6,6 +6,11 @@ import (
 	"sync"
 )
 
+const (
+	// Small enough
+	SegmentSizeForSpecialDirName = 56
+)
+
 type scatterMan struct {
 	smLock     *sync.RWMutex
 	scatterMap map[string]IScatter
@@ -20,7 +25,7 @@ func newScatterMan(outCh chan<- *WorkItem) *scatterMan {
 		smNameSvr:  NewNameServer(),
 		smoCh:      outCh,
 	}
-	rv.makeScatter(SpecialDirName)
+	rv.makeScatter(SegmentSizeForSpecialDirName, SpecialDirName)
 	return rv
 }
 
@@ -39,7 +44,7 @@ func (sm *scatterMan) getScatterForID(shortname string) (rv IScatter) {
 	return
 }
 
-func (sm *scatterMan) makeScatter(name string) (int, bool) {
+func (sm *scatterMan) makeScatter(segmentsize int, name string) (int, int, bool) {
 
 	sm.smLock.Lock()
 	defer sm.smLock.Unlock()
@@ -52,27 +57,30 @@ func (sm *scatterMan) makeScatter(name string) (int, bool) {
 		// return 0, false
 		scatter.AddRef()
 		id := scatter.GetID()
-		return id, true
+		elss := scatter.GetSegmentSize()
+		return id, elss, true
 	}
 	newID, err := sm.smNameSvr.IdForName(name)
 	if err != nil {
 		log.Printf("error map to id: %v", err)
-		return 0, false
+		return 0, 0, false
 	}
-	sm.scatterMap[name] = NewScatter(name, newID, sm.smoCh, func() {
+	sm.scatterMap[name] = NewScatter(segmentsize, name, newID, sm.smoCh, func() {
 		sm.finalizeScatter(name)
 	})
-	return newID, true
+	return newID, segmentsize, true
 }
 
-func (sm *scatterMan) findScatter(name string) (int, bool) {
+func (sm *scatterMan) findScatter(name string) (int, int, bool) {
 	sm.smLock.RLock()
 	defer sm.smLock.RUnlock()
-	if _, ok := sm.scatterMap[name]; !ok {
-		return 0, false
+	elScatter, ok := sm.scatterMap[name]
+	if !ok {
+		return 0, 0, false
 	}
+	segSize := elScatter.GetSegmentSize()
 	v, err := sm.smNameSvr.QueryIdForName(name)
-	return v, nil == err
+	return v, segSize, nil == err
 }
 
 func (sm *scatterMan) finalizeScatter(name string) {

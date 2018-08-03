@@ -12,9 +12,7 @@ import (
 )
 
 const (
-	FileSizeLimit = 300 * 1024 * 1024
-	SegmentSize   = 512
-
+	FileSizeLimit  = 300 * 1024 * 1024
 	IfDebugFragger = false
 )
 
@@ -24,16 +22,17 @@ type Fragger struct {
 	chunks       []Piece
 	hashSha256   []byte
 	originalName string
+	elSegSize    int
 }
 
-func NewFragger(inpath string) *Fragger {
+func NewFragger(segSize int, inpath string) *Fragger {
 	if !IsSpecialDirName(inpath) {
-		return newFraggerForFile(inpath)
+		return newFraggerForFile(segSize, inpath)
 	}
-	return newFraggerForFileList()
+	return newFraggerForFileList(segSize)
 }
 
-func newFraggerForFile(inpath string) *Fragger {
+func newFraggerForFile(segSize int, inpath string) *Fragger {
 	stat, err := os.Stat(inpath)
 	if err != nil || stat.IsDir() {
 		if err != nil {
@@ -50,14 +49,15 @@ func newFraggerForFile(inpath string) *Fragger {
 		log.Fatalf("error opening %v:%v", inpath, err)
 	}
 	defer fin.Close()
-	return newFraggerFromStream(fin, int(stat.Size()), inpath)
+	return newFraggerFromStream(fin, int(stat.Size()), segSize, inpath)
 }
 
-func newFraggerFromStream(instream io.Reader, size int, prompt string) *Fragger {
-	segCount := (size + (SegmentSize - 1)) / SegmentSize
+func newFraggerFromStream(instream io.Reader, size int, segmentSize int, prompt string) *Fragger {
+	segCount := (size + (segmentSize - 1)) / segmentSize
 	chunks := make([]Piece, segCount)
 
-	var buff [SegmentSize]byte
+	//var buff [SegmentSize]byte
+	buff := make([]byte, segmentSize)
 
 	hMac := sha256.New()
 	for i := 0; ; i++ {
@@ -84,6 +84,7 @@ func newFraggerFromStream(instream io.Reader, size int, prompt string) *Fragger 
 		chunks:       chunks,
 		hashSha256:   hashSha256,
 		originalName: prompt,
+		elSegSize:    segmentSize,
 	}
 }
 
@@ -99,12 +100,16 @@ func (f *Fragger) GetPieces() []Piece {
 	return f.chunks
 }
 
-func newFraggerForFileList() *Fragger {
+func (f *Fragger) GetSegmentSize() int {
+	return f.elSegSize
+}
+
+func newFraggerForFileList(segSize int) *Fragger {
 	ob := bytes.NewBuffer(nil)
 	files := dutil.ListFiles(".", dutil.StdIgnorer, dutil.AllFiles)
 	for _, file := range files {
 		io.WriteString(ob, file)
 		io.WriteString(ob, "\n")
 	}
-	return newFraggerFromStream(ob, ob.Len(), SpecialDirName)
+	return newFraggerFromStream(ob, ob.Len(), segSize, SpecialDirName)
 }
