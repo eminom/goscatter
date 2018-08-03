@@ -60,7 +60,7 @@ func (sm *ServeMan) ProcessPost(req coap.Message, from net.Addr) {
 		switch paths[0] {
 		case "fin":
 			if composer := sm.getComposerForID(paths[1]); composer != nil {
-				if composer.DoFinish() {
+				if composer.DoFinish(req.Payload) {
 					resp.Code = coap.Changed
 				} else {
 					resp.Code = coap.InternalServerError

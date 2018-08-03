@@ -18,8 +18,7 @@ type Composer struct {
 
 	name       string
 	shortid    int
-	hash       []byte // hash for the whole file content
-	chunkCount int    // we simply do not store file larger than 2G
+	chunkCount int // we simply do not store file larger than 2G
 
 	pieces     []Piece // chunk count to chunk-count
 	pieceSwap  []Piece
@@ -31,8 +30,8 @@ type Composer struct {
 	FileOpComm
 }
 
-func NewComposer(name string, shortid int, trait []byte, oCh chan<- *WorkItem, whenDone func()) *Composer {
-	hash, chunkCount, err := ParseComposerTrait(trait)
+func NewComposer(name string, shortid int, payloadBuff []byte, oCh chan<- *WorkItem, whenDone func()) *Composer {
+	chunkCount, err := strconv.Atoi(string(payloadBuff))
 	if err != nil {
 		log.Printf("error: %v", err)
 		return nil
@@ -84,7 +83,6 @@ func NewComposer(name string, shortid int, trait []byte, oCh chan<- *WorkItem, w
 		oCh:        oCh,
 		name:       name,
 		shortid:    shortid,
-		hash:       hash,
 		chunkCount: chunkCount,
 		pieces:     make([]Piece, chunkCount),
 		pieceSwap:  make([]Piece, chunkCount),
@@ -97,8 +95,17 @@ func NewComposer(name string, shortid int, trait []byte, oCh chan<- *WorkItem, w
 	}
 }
 
-func (c *Composer) DoFinish() bool {
+func (c *Composer) DoFinish(traitBuff []byte) bool {
 	defer c.doStop()
+
+	hash, chunkCount, err := ParseComposerTrait(traitBuff)
+	if err != nil {
+		log.Printf("trait buffer format error: %v", err)
+		return false
+	}
+	if chunkCount != c.chunkCount {
+		log.Printf("excuse me ??")
+	}
 
 	remains := 0
 	for _, v := range c.chunkState {
@@ -112,7 +119,7 @@ func (c *Composer) DoFinish() bool {
 		tmpName := c.name + ".tmp"
 		if c.SaveToFile(tmpName, c.PiecesToArray(c.pieces)) {
 			log.Printf("verifying for <%v>...", c.name)
-			if c.VerifyFile(tmpName, c.hash) {
+			if c.VerifyFile(tmpName, hash) {
 				if nil == os.Rename(tmpName, c.name) {
 					log.Printf("<%v> is stored.", c.name)
 					return true

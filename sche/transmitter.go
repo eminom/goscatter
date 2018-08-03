@@ -1,6 +1,7 @@
 package sche
 
 import (
+	"fmt"
 	"log"
 	"path/filepath"
 	"regexp"
@@ -29,6 +30,7 @@ func MakeTransmitterWork(proc Sche, inpath string, winSize int,
 	fragger := data.NewFragger(DefaultTransmitterSegmentSize, inpath)
 	pieces := fragger.GetPieces()
 	lPiece := len(pieces)
+	pieceStr := fmt.Sprintf("%v", lPiece)
 	trait := data.MakeComposerTrait(fragger.GetHash(), lPiece)
 
 	bc := winSize
@@ -82,7 +84,7 @@ func MakeTransmitterWork(proc Sche, inpath string, winSize int,
 		0: func() {
 			//~ Get length
 			req := co.NewPostReqf("/wr/%v", filepath.Base(inpath))
-			req.Payload = trait
+			req.Payload = []byte(pieceStr)
 			sender(req, func(resp *coap.Message) bool {
 				if resp.Code == coap.Created && isHexString.MatchString(string(resp.Payload)) {
 					shortid = string(resp.Payload)
@@ -101,6 +103,7 @@ func MakeTransmitterWork(proc Sche, inpath string, winSize int,
 		},
 		2: func() {
 			req := co.NewPostReqf("/fin/%v", shortid)
+			req.Payload = trait
 			sender(req, func(resp *coap.Message) bool {
 				if resp.Code == coap.Changed {
 					log.Printf("fin ok")

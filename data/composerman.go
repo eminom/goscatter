@@ -37,7 +37,7 @@ func (cm *composerMan) getComposerForID(shortname string) (rv *Composer) {
 	return
 }
 
-func (cm *composerMan) makeComposer(name string, traitBuff []byte) (int, bool) {
+func (cm *composerMan) makeComposer(name string, payloadBuff []byte) (int, bool) {
 	cm.composerLock.Lock()
 	defer cm.composerLock.Unlock()
 	if _, ok := cm.compoMap[name]; ok {
@@ -50,7 +50,7 @@ func (cm *composerMan) makeComposer(name string, traitBuff []byte) (int, bool) {
 		log.Printf("error map to id: %v", err)
 		return 0, false
 	}
-	cm.compoMap[name] = NewComposer(name, newID, traitBuff, cm.outCh, func() {
+	cm.compoMap[name] = NewComposer(name, newID, payloadBuff, cm.outCh, func() {
 		cm.finalizeComposer(name)
 	})
 	return newID, true
