@@ -22,6 +22,14 @@ func IsFileExists(inpath string) bool {
 	return nil == err && !stat.IsDir()
 }
 
+func GetFileSize(inpath string) int64 {
+	stat, err := os.Stat(inpath)
+	if err == nil {
+		return stat.Size()
+	}
+	return 0
+}
+
 func QuitProgram() {
 	os.Exit(int(exitCode))
 }

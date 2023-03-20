@@ -85,7 +85,9 @@ func masterEnt() {
 	}
 
 	sProc := sche.NewScheProc()
+	isUploadWork := false
 	if *fUpload != "" {
+		isUploadWork = true
 		if !comm.IsFileExists(*fUpload) {
 			log.Fatalf("upload path error: %v", *fUpload)
 		}
@@ -116,4 +118,9 @@ func masterEnt() {
 	snder.TriggerClose()
 	wg.Wait()
 	log.Printf("done in %v", time.Since(startTs))
+	if isUploadWork {
+		totSize := comm.GetFileSize(*fUpload)
+		bandwidth := float64(totSize) / time.Since(startTs).Seconds()
+		log.Printf("%v mps", bandwidth/(1024*1024))
+	}
 }

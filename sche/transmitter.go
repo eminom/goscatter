@@ -38,13 +38,13 @@ func MakeTransmitterWork(proc Sche, inpath string, winSize int,
 		bc = int(MinWinSize)
 	}
 
-	var rLeft = int32(bc)
+	var rLeft = int64(bc)
 	var shortid string // something like 0xE6
 
 	var doUpload func(int)
 	doUpload = func(idx int) {
 		if idx >= lPiece {
-			nuevo := atomic.AddInt32(&rLeft, -1)
+			nuevo := atomic.AddInt64(&rLeft, -1)
 			if nuevo == 0 {
 				//TODO
 				log.Printf("all uploaded")
