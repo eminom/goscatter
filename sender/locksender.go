@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	co "../coaputils"
-	"../comm"
+	co "github.com/eminom/goscatter/coaputils"
+	"github.com/eminom/goscatter/comm"
 
 	"github.com/eminom/go-coap"
 )
@@ -129,7 +129,6 @@ func (ls *lockSender) TriggerClose() {
 	ls.doPreTrigger()
 }
 
-//
 func (ls *lockSender) SendMessage(msg *coap.Message, callback func(*coap.Message) bool) {
 	ls.elSend(msg, callback)
 }

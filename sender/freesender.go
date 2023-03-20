@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	co "../coaputils"
-	"../comm"
+	co "github.com/eminom/goscatter/coaputils"
+	"github.com/eminom/goscatter/comm"
 
 	"github.com/eminom/go-coap"
 )
@@ -125,7 +125,6 @@ func newFreeSender(uSock *net.UDPConn, wsize int, wg *sync.WaitGroup, doAbort fu
 
 func (ls *freeSender) TriggerClose() {}
 
-//
 func (ls *freeSender) SendMessage(msg *coap.Message, callback func(*coap.Message) bool) {
 	ls.elSend(msg, callback)
 }

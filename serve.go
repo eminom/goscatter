@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"./data"
+	"github.com/eminom/goscatter/data"
 
 	"github.com/eminom/go-coap"
 )

@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"sync/atomic"
 
-	co "../coaputils"
-	"../comm"
-	"../data"
+	co "github.com/eminom/goscatter/coaputils"
+	"github.com/eminom/goscatter/comm"
+	"github.com/eminom/goscatter/data"
 
 	"github.com/eminom/go-coap"
 )
@@ -18,7 +18,6 @@ var (
 	isHexString = regexp.MustCompile(`^[\dA-Fa-f]+$`)
 )
 
-//
 const (
 	DefaultTransmitterSegmentSize = 512
 )

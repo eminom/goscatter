@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 package main
@@ -12,9 +13,9 @@ import (
 	"sync"
 	"syscall"
 
-	"./comm"
-	"./sche"
-	"./sender"
+	"github.com/eminom/goscatter/comm"
+	"github.com/eminom/goscatter/sche"
+	"github.com/eminom/goscatter/sender"
 )
 
 var (

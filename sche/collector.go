@@ -15,9 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	co "../coaputils"
-	"../comm"
-	"../data"
+	co "github.com/eminom/goscatter/coaputils"
+	"github.com/eminom/goscatter/comm"
+	"github.com/eminom/goscatter/data"
 
 	"github.com/eminom/go-coap"
 )
@@ -201,6 +201,7 @@ func MakeSacarWork(proc Sche, filename string,
 				if coap.Acknowledgement == resp.Type && resp.Code == coap.Created {
 					var err error
 					shortID, thatSegsize, err = parseShortIDndSeg(string(resp.Payload))
+					_ = thatSegsize
 					if err != nil {
 						panic(err)
 					}

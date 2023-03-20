@@ -6,7 +6,7 @@ import (
 	"net"
 	"strconv"
 
-	"../comm"
+	"github.com/eminom/goscatter/comm"
 
 	"github.com/eminom/go-coap"
 )
