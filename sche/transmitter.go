@@ -18,17 +18,15 @@ var (
 	isHexString = regexp.MustCompile(`^[\dA-Fa-f]+$`)
 )
 
-const (
-	DefaultTransmitterSegmentSize = 512
-)
-
 func MakeTransmitterWork(proc Sche, inpath string, winSize int,
+	transmitSegSize int,
 	sender func(*coap.Message, func(*coap.Message) bool),
 	doFinish func()) map[int]func() {
 
-	fragger := data.NewFragger(DefaultTransmitterSegmentSize, inpath)
+	fragger := data.NewFragger(transmitSegSize, inpath)
 	pieces := fragger.GetPieces()
 	lPiece := len(pieces)
+	log.Printf("%v piece(s) to transmit", lPiece)
 	pieceStr := fmt.Sprintf("%v", lPiece)
 	trait := data.MakeComposerTrait(fragger.GetHash(), lPiece)
 
@@ -46,7 +44,7 @@ func MakeTransmitterWork(proc Sche, inpath string, winSize int,
 	doUpload = func(idx int) {
 		if idx >= lPiece {
 			nuevo := atomic.AddInt32(&rLeft, -1)
-			if 0 == nuevo {
+			if nuevo == 0 {
 				//TODO
 				log.Printf("all uploaded")
 				proc.KickOff(2)

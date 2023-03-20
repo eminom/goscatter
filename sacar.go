@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/eminom/goscatter/comm"
 	"github.com/eminom/goscatter/sche"
@@ -88,7 +89,7 @@ func masterEnt() {
 			log.Fatalf("upload path error: %v", *fUpload)
 		}
 		sProc.StartWorkSeq(&wg, ctx.Done(), sche.MakeTransmitterWork(
-			sProc, *fUpload, *fWinSize, snder.SendMessage,
+			sProc, *fUpload, *fWinSize, *fFragsize, snder.SendMessage,
 			func() { doCancel() },
 		))
 	} else if len(flag.Args()) > 0 {
@@ -99,6 +100,7 @@ func masterEnt() {
 	} else {
 		log.Fatalf("not enough parameter")
 	}
+	startTs := time.Now()
 	sProc.KickOff(0)
 
 	sigCh := make(chan os.Signal, 1)
@@ -111,5 +113,5 @@ func masterEnt() {
 	doCancel() // can be called multiple times.
 	snder.TriggerClose()
 	wg.Wait()
-	log.Printf("done")
+	log.Printf("done in %v", time.Since(startTs))
 }
