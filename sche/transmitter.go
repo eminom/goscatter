@@ -21,7 +21,8 @@ var (
 func MakeTransmitterWork(proc Sche, inpath string, winSize int,
 	transmitSegSize int,
 	sender func(*coap.Message, func(*coap.Message) bool),
-	doFinish func()) map[int]func() {
+	doFinish func(),
+	verbose bool) map[int]func() {
 
 	fragger := data.NewFragger(transmitSegSize, inpath)
 	pieces := fragger.GetPieces()
@@ -51,8 +52,10 @@ func MakeTransmitterWork(proc Sche, inpath string, winSize int,
 			}
 			return
 		}
-		if idx%1000 == 0 {
-			log.Printf("upload for %v", idx)
+		if verbose {
+			if idx%1000 == 0 {
+				log.Printf("upload for %v", idx)
+			}
 		}
 		req := co.NewPutReqf("/f/%v/%v/0", shortid, idx)
 		req.Payload = pieces[idx].Sig

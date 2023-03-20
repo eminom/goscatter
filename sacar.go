@@ -26,6 +26,7 @@ var (
 	fUpload   = flag.String("u", "", "upload file path")
 	fAlgo     = flag.String("a", "", "algorithm")
 	fFragsize = flag.Int("f", 512, "fragment size")
+	fVerbose  = flag.Bool("verbose", false, "show more logs")
 )
 
 func init() {
@@ -91,6 +92,7 @@ func masterEnt() {
 		sProc.StartWorkSeq(&wg, ctx.Done(), sche.MakeTransmitterWork(
 			sProc, *fUpload, *fWinSize, *fFragsize, snder.SendMessage,
 			func() { doCancel() },
+			*fVerbose,
 		))
 	} else if len(flag.Args()) > 0 {
 		sProc.StartWorkSeq(&wg, ctx.Done(), sche.MakeSacarWork(
